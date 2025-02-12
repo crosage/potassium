@@ -1,49 +1,32 @@
-"""
-该模块提供了多段线、法线、封闭形状等几何数据的文件读写功能。
-"""
-
 import geopandas as gpd
 from geometry.polyline import Polyline
 from shapely.geometry import LineString, Point, MultiLineString, Polygon
-import yaml
 import json
+from config import load_config, update_path
 
 
 # ========================
-# 多段线相关文件操作
+# 从配置中获取路径
 # ========================
 
-def load_polylines_from_shp(file_path, ignore=False):
-    """
-    从 Shapefile 文件中加载多段线数据。
-    """
-    gdf = gpd.read_file(file_path)
-    print("原始 CRS:", gdf.crs)
-    gdf = gdf.to_crs("EPSG:32650")
-    print("转换后的 CRS:", gdf.crs)
+config = load_config()
 
-    polylines = []
-    for idx, geom in enumerate(gdf.geometry):
-        if idx == 8 and ignore:
-            continue
-        if isinstance(geom, LineString):
-            points = [Point(coord) for coord in geom.coords]
-            polylines.append(Polyline(id=idx, points=points))
-        elif isinstance(geom, MultiLineString):
-            for sub_idx, line in enumerate(geom.geoms):
-                points = [Point(coord) for coord in line.coords]
-                polylines.append(Polyline(id=f"{idx}_{sub_idx}", points=points))
-    return polylines
+def get_default_path(key):
+    """
+    从配置中获取默认路径。
+    """
+    return config.get(key, "")
 
 
 # ========================
 # 北岸与南岸线相关操作
 # ========================
 
-def save_north_south_lines_to_json(north_line, south_line, filename):
+def save_north_south_lines_to_json(north_line, south_line, filename=None):
     """
     将北岸和南岸线保存为 JSON 文件。
     """
+    filename = filename or get_default_path("north_south_lines")
     data = {
         'north_line': list(north_line.coords),
         'south_line': list(south_line.coords)
@@ -54,10 +37,11 @@ def save_north_south_lines_to_json(north_line, south_line, filename):
     print(f"Lines saved to {filename}")
 
 
-def load_north_south_lines_from_json(filename):
+def load_north_south_lines_from_json(filename=None):
     """
     从 JSON 文件中加载北岸和南岸线。
     """
+    filename = filename or get_default_path("north_south_lines")
     with open(filename, 'r') as f:
         data = json.load(f)
 
@@ -70,13 +54,11 @@ def load_north_south_lines_from_json(filename):
 # 分割点相关操作
 # ========================
 
-def save_split_points_to_file(split_points, file_path, file_format="yaml"):
+def save_split_points_to_file(split_points, file_path=None):
     """
     保存分割点和法线数据。
     """
-    if file_format not in ["yaml", "json"]:
-        raise ValueError("file_format must be 'yaml' or 'json'")
-
+    file_path = file_path or get_default_path("split_points")
     serialized_results = [
         {
             "point": {"x": point.x, "y": point.y},
@@ -88,19 +70,17 @@ def save_split_points_to_file(split_points, file_path, file_format="yaml"):
     ]
 
     with open(file_path, "w") as f:
-        if file_format == "yaml":
-            yaml.dump(serialized_results, f, default_flow_style=False)
-        else:
-            json.dump(serialized_results, f, indent=4)
+        json.dump(serialized_results, f, indent=4)
     print(f"Split points saved to {file_path}")
 
 
-def load_split_points_from_file(file_path, is_yaml=True):
+def load_split_points_from_file(file_path=None):
     """
     从文件中加载分割点和法线数据。
     """
+    file_path = file_path or get_default_path("split_points")
     with open(file_path, "r") as f:
-        data = yaml.safe_load(f) if is_yaml else json.load(f)
+        data = json.load(f)
 
     split_points = [
         (
@@ -117,13 +97,11 @@ def load_split_points_from_file(file_path, is_yaml=True):
 # 封闭形状相关操作
 # ========================
 
-def save_closed_shapes_to_file(closed_shapes, file_path, file_format="yaml"):
+def save_closed_shapes_to_file(closed_shapes, file_path=None):
     """
     保存封闭形状数据。
     """
-    if file_format not in ["yaml", "json"]:
-        raise ValueError("file_format must be 'yaml' or 'json'")
-
+    file_path = file_path or get_default_path("closed_shapes")
     serialized_shapes = []
     for shape in closed_shapes:
         serialized_shapes.append({
@@ -132,19 +110,17 @@ def save_closed_shapes_to_file(closed_shapes, file_path, file_format="yaml"):
         })
 
     with open(file_path, "w") as f:
-        if file_format == "yaml":
-            yaml.dump(serialized_shapes, f, default_flow_style=False)
-        else:
-            json.dump(serialized_shapes, f, indent=4)
+        json.dump(serialized_shapes, f, indent=4)
     print(f"Closed shapes saved to {file_path}")
 
 
-def load_closed_shapes_from_file(file_path, is_yaml=True):
+def load_closed_shapes_from_file(file_path=None):
     """
     加载封闭形状数据。
     """
+    file_path = file_path or get_default_path("closed_shapes")
     with open(file_path, "r") as f:
-        data = yaml.safe_load(f) if is_yaml else json.load(f)
+        data = json.load(f)
 
     closed_shapes = []
     for item in data:
@@ -159,10 +135,11 @@ def load_closed_shapes_from_file(file_path, is_yaml=True):
 # 合并后的多段线操作
 # ========================
 
-def save_merged_polyline_to_json(polyline, filename):
+def save_merged_polyline_to_json(polyline, filename=None):
     """
     将合并后的多段线保存为 JSON 文件。
     """
+    filename = filename or get_default_path("merged_polyline")
     data = {
         'id': polyline.id,
         'points': [{'x': point.x, 'y': point.y} for point in polyline.points]
@@ -173,39 +150,11 @@ def save_merged_polyline_to_json(polyline, filename):
     print(f"Merged polyline saved to {filename}")
 
 
-def load_merged_polyline_from_json(filename):
+def load_merged_polyline_from_json(filename=None):
     """
     从 JSON 文件中加载合并后的多段线。
     """
-    with open(filename, 'r') as f:
-        data = json.load(f)
-
-    id = data['id']
-    points = [Point(coord['x'], coord['y']) for coord in data['points']]
-    return Polyline(id=id, points=points)
-
-# ========================
-# 平滑后的多段线操作
-# ========================
-
-def save_smoothed_polyline_to_json(polyline, filename):
-    """
-    将合并后的多段线保存为 JSON 文件。
-    """
-    data = {
-        'id': polyline.id,
-        'points': [{'x': point.x, 'y': point.y} for point in polyline.points]
-    }
-
-    with open(filename, 'w') as f:
-        json.dump(data, f, indent=4)
-    print(f"Merged polyline saved to {filename}")
-
-
-def load_smoothed_polyline_from_json(filename):
-    """
-    从 JSON 文件中加载合并后的多段线。
-    """
+    filename = filename or get_default_path("merged_polyline")
     with open(filename, 'r') as f:
         data = json.load(f)
 

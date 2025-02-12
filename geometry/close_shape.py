@@ -1,5 +1,3 @@
-from shapely.geometry import Polygon, Point, LineString
-
 class ClosedShape:
     def __init__(self, intersections, work_line_1, work_line_2, tangent_line_1, tangent_line_2, polygon):
         self.intersections = intersections
