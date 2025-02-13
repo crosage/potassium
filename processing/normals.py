@@ -1,5 +1,3 @@
-import numpy as np
-from shapely import LineString
 
 import numpy as np
 from shapely.geometry import LineString

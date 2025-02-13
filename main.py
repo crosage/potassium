@@ -3,6 +3,7 @@
 import os
 from geometry.polyline import Polyline
 from geometry.close_shape import ClosedShape
+from processing.close_shape import plot_closed_shapes_with_polylines
 from processing.normals import generate_infinite_normals_on_linestring_with_polyline
 from file_io.file_io import (
     load_polylines_from_shp,
@@ -73,7 +74,7 @@ def main():
         save_north_south_lines_to_json(north_line, south_line, split_lines_path)
 
     # 4. 生成法线
-    normals_path = "output/normals.yaml"
+    normals_path = "output/normals.json"
     if check_file_exists(normals_path):
         print("4. 生成法线... 已检测到缓存文件，跳过法线生成步骤。")
         normals = load_split_points_from_file(normals_path)
@@ -88,31 +89,13 @@ def main():
         save_split_points_to_file(normals, normals_path)
 
     # 5. 封闭形状生成
-    closed_shapes_path = "output/closed_shapes.yaml"
+    closed_shapes_path = "output/closed_shapes.json"
     if check_file_exists(closed_shapes_path):
         print("5. 封闭形状生成... 已检测到缓存文件，跳过封闭形状生成步骤。")
         closed_shapes = load_closed_shapes_from_file(closed_shapes_path)
     else:
         print("5. 封闭形状生成... 开始计算。")
-        closed_shapes = []
-        for i in range(len(normals) - 1):
-            intersections = [normals[i][0], normals[i + 1][0]]
-            work_line_1 = normals[i][1]
-            work_line_2 = normals[i + 1][1]
-            tangent_line_1 = LineString([intersections[0], intersections[1]])
-            tangent_line_2 = LineString([intersections[1], intersections[0]])
-            polygon = LineString([
-                intersections[0],
-                intersections[1],
-                work_line_2.coords[-1],
-                work_line_1.coords[-1],
-                intersections[0]
-            ])
-            closed_shapes.append(
-                ClosedShape(
-                    intersections, work_line_1, work_line_2, tangent_line_1, tangent_line_2, polygon
-                )
-            )
+        closed_shapes = plot_closed_shapes_with_polylines(normals,north_line,south_line,log=False)
         save_closed_shapes_to_file(closed_shapes, closed_shapes_path)
 
     # 6. 检查点是否在封闭形状内部

@@ -1,4 +1,6 @@
 import geopandas as gpd
+
+from geometry.close_shape import ClosedShape
 from geometry.polyline import Polyline
 from shapely.geometry import LineString, Point, MultiLineString, Polygon
 import json
@@ -101,32 +103,70 @@ def save_closed_shapes_to_file(closed_shapes, file_path=None):
     """
     保存封闭形状数据。
     """
-    file_path = file_path or get_default_path("closed_shapes")
     serialized_shapes = []
-    for shape in closed_shapes:
-        serialized_shapes.append({
-            "intersections": [{"x": p[0], "y": p[1]} for p in shape.intersections],
-            "polygon": [{"x": coord[0], "y": coord[1]} for coord in shape.polygon.exterior.coords]
-        })
 
-    with open(file_path, "w") as f:
-        json.dump(serialized_shapes, f, indent=4)
-    print(f"Closed shapes saved to {file_path}")
+    for i, shape in enumerate(closed_shapes):
+        print(f"正在保存{i}")
+        try:
+            serialized_shape = {
+                "intersections": [
+                    {"x": point[0], "y": point[1]} for point in shape.intersections
+                ],
+                "work_line_1": [
+                    {"x": coord[0], "y": coord[1]} for coord in shape.work_line_1.coords
+                ],
+                "work_line_2": [
+                    {"x": coord[0], "y": coord[1]} for coord in shape.work_line_2.coords
+                ],
+                "tangent_line_1": [
+                    {"x": coord[0], "y": coord[1]} for coord in shape.tangent_line_1.coords
+                ],
+                "tangent_line_2": [
+                    {"x": coord[0], "y": coord[1]} for coord in shape.tangent_line_2.coords
+                ],
+                "polygon": [
+                    {"x": coord[0], "y": coord[1]} for coord in shape.polygon.coords
+                ],
+            }
+            serialized_shapes.append(serialized_shape)
+        except Exception as e:
+            print(f"Error serializing ClosedShape at index {i}: {e}")
+            continue  # 跳过当前 ClosedShape，继续处理下一个
+
+    # 保存结果到文件
+    try:
+        with open(file_path, "w") as f:
+            json.dump(serialized_shapes, f, indent=4)
+        print(f"Closed Shapes saved successfully to {file_path}")
+    except Exception as e:
+        print(f"Error saving Closed Shapes to file: {e}")
 
 
 def load_closed_shapes_from_file(file_path=None):
     """
     加载封闭形状数据。
     """
-    file_path = file_path or get_default_path("closed_shapes")
     with open(file_path, "r") as f:
         data = json.load(f)
 
     closed_shapes = []
     for item in data:
         intersections = [Point(p["x"], p["y"]) for p in item["intersections"]]
+        work_line_1 = LineString([(coord["x"], coord["y"]) for coord in item["work_line_1"]])
+        work_line_2 = LineString([(coord["x"], coord["y"]) for coord in item["work_line_2"]])
+        tangent_line_1 = LineString([(coord["x"], coord["y"]) for coord in item["tangent_line_1"]])
+        tangent_line_2 = LineString([(coord["x"], coord["y"]) for coord in item["tangent_line_2"]])
         polygon = Polygon([(coord["x"], coord["y"]) for coord in item["polygon"]])
-        closed_shapes.append({"intersections": intersections, "polygon": polygon})
+
+        closed_shape = ClosedShape(
+            intersections=intersections,
+            work_line_1=work_line_1,
+            work_line_2=work_line_2,
+            tangent_line_1=tangent_line_1,
+            tangent_line_2=tangent_line_2,
+            polygon=polygon,
+        )
+        closed_shapes.append(closed_shape)
 
     return closed_shapes
 

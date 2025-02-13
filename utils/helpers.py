@@ -42,9 +42,10 @@ def find_point_in_closed_shapes(point, closed_shapes):
     """
     判断一个点是否位于封闭形状内部。
     """
-    for shape in closed_shapes:
-        if shape.contains_point(point):
-            return shape
+    print(f"长度为{len(closed_shapes)}   {type(closed_shapes[0])}")
+    for i, shape in enumerate(closed_shapes):
+        if shape.polygon.contains(point):
+            return i, shape
     return None
 
 
