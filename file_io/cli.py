@@ -1,5 +1,6 @@
 import typer
-from config import update_path
+from pathlib import Path
+from config import update_path, load_config, CONFIG_FILE
 
 app = typer.Typer()
 
@@ -41,3 +42,15 @@ def set_merged_polyline_path(
     """
     update_path("merged_polyline", path)
     print(f"Updated merged polyline path to: {path}")
+
+
+def show_config():
+    """
+    显示当前配置文件的每个项及其绝对路径。
+    """
+    config = load_config()
+    print(f"配置文件 {CONFIG_FILE.resolve()} 内容：")
+
+    for key, path in config.items():
+        abs_path = Path(path).resolve()
+        print(f"{key}: {abs_path}")

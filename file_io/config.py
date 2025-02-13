@@ -11,12 +11,16 @@ def load_config():
         with open(CONFIG_FILE, 'r') as f:
             return json.load(f)
     else:
-        return {
+        default_config = {
             "north_south_lines": "north_south_lines.json",
             "split_points": "split_points.json",
             "closed_shapes": "closed_shapes.json",
             "merged_polyline": "merged_polyline.json"
         }
+        with open(CONFIG_FILE, 'w') as f:
+            json.dump(default_config, f, indent=4)
+        print(f"{CONFIG_FILE} not found. Created with default config.")
+        return default_config
 
 def save_config(config):
     """

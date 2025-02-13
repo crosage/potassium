@@ -2,7 +2,7 @@ import geopandas as gpd
 from geometry.polyline import Polyline
 from shapely.geometry import LineString, Point, MultiLineString, Polygon
 import json
-from config import load_config, update_path
+from file_io.config import load_config, update_path
 
 
 # ========================
@@ -161,3 +161,25 @@ def load_merged_polyline_from_json(filename=None):
     id = data['id']
     points = [Point(coord['x'], coord['y']) for coord in data['points']]
     return Polyline(id=id, points=points)
+
+def load_polylines_from_shp(file_path, ignore=False):
+    gdf = gpd.read_file(file_path)
+    print("原始 CRS:", gdf.crs)
+    gdf = gdf.to_crs("EPSG:32650")
+    print("转换后的 CRS:", gdf.crs)
+
+    polylines = []
+    for idx, geom in enumerate(gdf.geometry):
+        print(f"Geometry {idx} type: {type(geom)}")
+        if idx == 8 and ignore:
+            continue
+        if isinstance(geom, LineString):
+            points = [Point(coord) for coord in geom.coords]
+            polyline = Polyline(id=idx, points=points)
+            polylines.append(polyline)
+        elif isinstance(geom, MultiLineString):
+            for sub_idx, line in enumerate(geom.geoms):
+                points = [Point(coord) for coord in line.coords]
+                polyline = Polyline(id=f"{idx}_{sub_idx}", points=points)
+                polylines.append(polyline)
+    return polylines

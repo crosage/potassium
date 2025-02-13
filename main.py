@@ -3,7 +3,7 @@
 import os
 from geometry.polyline import Polyline
 from geometry.close_shape import ClosedShape
-from geometry.normals import generate_infinite_normals_on_linestring_with_polyline, remove_crossing_normals
+from processing.normals import generate_infinite_normals_on_linestring_with_polyline
 from file_io.file_io import (
     load_polylines_from_shp,
     save_north_south_lines_to_json,
@@ -15,6 +15,7 @@ from file_io.file_io import (
     load_merged_polyline_from_json,
     save_merged_polyline_to_json
 )
+from processing.ditch import process_ditch_endpoints
 from processing.merging import merge_polylines
 from processing.splitting import split_polyline_by_points
 from utils.helpers import find_point_in_closed_shapes
@@ -82,9 +83,8 @@ def main():
             merged_polyline.line,
             north_line,
             south_line,
-            interval=700
+            interval=1000
         )
-        normals = remove_crossing_normals(normals)
         save_split_points_to_file(normals, normals_path)
 
     # 5. 封闭形状生成
@@ -116,15 +116,10 @@ def main():
         save_closed_shapes_to_file(closed_shapes, closed_shapes_path)
 
     # 6. 检查点是否在封闭形状内部
-    print("6. 点在封闭形状内的检查...")
-    test_point = Point(100, 200)
-    containing_shape = find_point_in_closed_shapes(test_point, closed_shapes)
-    if containing_shape:
-        print("点位于封闭形状内。")
-    else:
-        print("点不在任何封闭形状内。")
+    ditch_file="D:\\code\\polyline\\data\\20230305清沟_hz.shp"
+    ditchs = load_polylines_from_shp(ditch_file, False)
+    process_ditch_endpoints(ditchs,closed_shapes,merged_polyline,r"D:\code\polyline\output\ditch",True)
 
-    print("所有步骤完成，结果已保存至 output 文件夹。")
 
 if __name__ == "__main__":
     main()

@@ -1,0 +1,6 @@
+{
+    "north_south_lines": "north_south_lines.json",
+    "split_points": "split_points.json",
+    "closed_shapes": "closed_shapes.json",
+    "merged_polyline": "merged_polyline.json"
+}
