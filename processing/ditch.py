@@ -1,13 +1,14 @@
 import hashlib
 import os
 from matplotlib import pyplot as plt
+from tqdm import tqdm
 from utils.helpers import find_point_in_closed_shapes
 
 
 def process_ditch_endpoints(ditchs, closed_shapes, centerline, save_path=None, log=True):
     results = []
 
-    for idx, ditch in enumerate(ditchs):
+    for idx, ditch in tqdm(enumerate(ditchs), total=len(ditchs), desc="处理清沟", unit="个"):
         if len(ditch.points) < 2:
             print(f"⚠️ 警告：清沟 {ditch.id} 只有一个点，跳过。")
             continue
@@ -112,10 +113,10 @@ def process_ditch_endpoints(ditchs, closed_shapes, centerline, save_path=None, l
             if save_path:
                 if not os.path.exists(save_path):
                     os.makedirs(save_path)
-                    print(f"文件夹 {save_path} 已创建。")
+                    # print(f"文件夹 {save_path} 已创建。")
 
                 plt.savefig(f"{save_path}/ditch_{ditch.id}_projections.png", dpi=300, bbox_inches='tight')
-                print(f"图像已保存到 {save_path}/ditch_{ditch.id}_projections.png")
+                # print(f"图像已保存到 {save_path}/ditch_{ditch.id}_projections.png")
                 plt.close()
             else:
                 plt.show()

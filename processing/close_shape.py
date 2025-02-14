@@ -1,15 +1,11 @@
-import hashlib
-import os
-
-from matplotlib import pyplot as plt
 from shapely import Polygon
 from shapely.geometry import LineString, Point
-
+from tqdm import tqdm
 from geometry.close_shape import ClosedShape
 from processing.splitting import extract_subcurve
 
 
-def plot_closed_shapes_with_polylines(center_normals, north_line, south_line, log=False):
+def generate_closed_shapes_with_polylines(center_normals, north_line, south_line, log=False):
     """
     给定中心点、北岸和南岸折线，求出每个封闭的区域。
     :param center_normals: 中心点及法线数据。
@@ -20,8 +16,7 @@ def plot_closed_shapes_with_polylines(center_normals, north_line, south_line, lo
     :return: 封闭形状列表。
     """
     closed_shapes = []
-    for i in range(len(center_normals) - 1):
-        print(f"当前正在遍历 {i}")
+    for i in tqdm(range(len(center_normals) - 1), desc="生成封闭形状", unit="个"):
 
         # 当前点与下一个点
         current_point = center_normals[i][0]

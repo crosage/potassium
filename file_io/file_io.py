@@ -1,5 +1,5 @@
 import geopandas as gpd
-
+from tqdm import tqdm
 from geometry.close_shape import ClosedShape
 from geometry.polyline import Polyline
 from shapely.geometry import LineString, Point, MultiLineString, Polygon
@@ -105,8 +105,7 @@ def save_closed_shapes_to_file(closed_shapes, file_path=None):
     """
     serialized_shapes = []
 
-    for i, shape in enumerate(closed_shapes):
-        print(f"正在保存{i}")
+    for i, shape in tqdm(enumerate(closed_shapes), total=len(closed_shapes), desc="处理清沟", unit="个"):
         try:
             serialized_shape = {
                 "intersections": [
@@ -125,7 +124,7 @@ def save_closed_shapes_to_file(closed_shapes, file_path=None):
                     {"x": coord[0], "y": coord[1]} for coord in shape.tangent_line_2.coords
                 ],
                 "polygon": [
-                    {"x": coord[0], "y": coord[1]} for coord in shape.polygon.coords
+                    {"x": coord[0], "y": coord[1]} for coord in shape.polygon.exterior.coords
                 ],
             }
             serialized_shapes.append(serialized_shape)
@@ -210,7 +209,6 @@ def load_polylines_from_shp(file_path, ignore=False):
 
     polylines = []
     for idx, geom in enumerate(gdf.geometry):
-        print(f"Geometry {idx} type: {type(geom)}")
         if idx == 8 and ignore:
             continue
         if isinstance(geom, LineString):

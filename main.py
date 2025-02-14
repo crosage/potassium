@@ -1,9 +1,7 @@
 """ 该模块是程序的主入口，负责控制整体流程，调用各个模块完成多段线的加载、合并、分割、法线生成、封闭形状构建等任务。 """
 
 import os
-from geometry.polyline import Polyline
-from geometry.close_shape import ClosedShape
-from processing.close_shape import plot_closed_shapes_with_polylines
+from processing.close_shape import generate_closed_shapes_with_polylines
 from processing.normals import generate_infinite_normals_on_linestring_with_polyline
 from file_io.file_io import (
     load_polylines_from_shp,
@@ -19,11 +17,7 @@ from file_io.file_io import (
 from processing.ditch import process_ditch_endpoints
 from processing.merging import merge_polylines
 from processing.splitting import split_polyline_by_points
-from utils.helpers import find_point_in_closed_shapes
-
 from shapely.geometry import LineString, Point
-
-from visualization.plot import plot_polyline
 
 def check_file_exists(file_path):
     return os.path.exists(file_path)
@@ -95,13 +89,13 @@ def main():
         closed_shapes = load_closed_shapes_from_file(closed_shapes_path)
     else:
         print("5. 封闭形状生成... 开始计算。")
-        closed_shapes = plot_closed_shapes_with_polylines(normals,north_line,south_line,log=False)
+        closed_shapes = generate_closed_shapes_with_polylines(normals, north_line, south_line, log=False)
         save_closed_shapes_to_file(closed_shapes, closed_shapes_path)
 
     # 6. 检查点是否在封闭形状内部
-    ditch_file="D:\\code\\polyline\\data\\20230305清沟_hz.shp"
+    ditch_file="data\\20230305清沟_hz.shp"
     ditchs = load_polylines_from_shp(ditch_file, False)
-    process_ditch_endpoints(ditchs,closed_shapes,merged_polyline,r"D:\code\polyline\output\ditch",True)
+    process_ditch_endpoints(ditchs,closed_shapes,merged_polyline,r"output\ditch原始",True)
 
 
 if __name__ == "__main__":

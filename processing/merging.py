@@ -2,7 +2,6 @@
 多段线的合并功能
 """
 
-from shapely.geometry import LineString, Point
 import matplotlib.pyplot as plt
 import random
 from geometry.polyline import Polyline

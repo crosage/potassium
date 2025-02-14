@@ -14,12 +14,7 @@ def extract_subcurve(line, point1, point2, log=False):
     try:
         distance1 = line.project(point1)
         distance2 = line.project(point2)
-
-        print(f"Point1 在折线上的距离: {distance1}")
-        print(f"Point2 在折线上的距离: {distance2}")
-
         subcurve = substring(line, distance1, distance2)
-        print(f"提取的子曲线长度: {subcurve.length}")
 
         if log:
             plot_subcurve(line, point1, point2, subcurve)
