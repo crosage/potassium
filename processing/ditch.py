@@ -1,13 +1,15 @@
 import hashlib
+import math
 import os
 from matplotlib import pyplot as plt
 from tqdm import tqdm
+from processing.splitting import extract_subcurve
 from utils.helpers import find_point_in_closed_shapes
 
 
-def process_ditch_endpoints(ditchs, closed_shapes, centerline, save_path=None, log=True):
+def process_ditch_endpoints(ditchs, closed_shapes,north_line,south_line, centerline, save_path=None, log=True):
     results = []
-
+    print(f"{type(north_line)}   {type(south_line)}")
     for idx, ditch in tqdm(enumerate(ditchs), total=len(ditchs), desc="处理清沟", unit="个"):
         if len(ditch.points) < 2:
             print(f"⚠️ 警告：清沟 {ditch.id} 只有一个点，跳过。")
@@ -39,7 +41,10 @@ def process_ditch_endpoints(ditchs, closed_shapes, centerline, save_path=None, l
             proj_end_1_point = None
             proj_end_2_point = None
             print(f"⚠️ 清沟 {ditch.id} 的终点不在任何 ClosedShape 中。")
-
+        north_length=extract_subcurve(north_line,proj_start_1_point,proj_end_1_point).length
+        south_length=extract_subcurve(south_line,proj_start_2_point,proj_end_2_point).length
+        ditch_length=extract_subcurve(ditch.line,ditch.points[0],ditch.points[-1]).length
+        # print(f"北岸结果：{north_length}    南岸结果：{south_length}")
         # 存储结果
         results.append({
             "ditch_id": ditch.id,
@@ -51,21 +56,29 @@ def process_ditch_endpoints(ditchs, closed_shapes, centerline, save_path=None, l
             "end_proj_tangent_2": (proj_end_2_point.x, proj_end_2_point.y) if proj_end_2_point else None,
         })
 
+        # 绘制清沟和其他元素
         if log:
             fig, ax = plt.subplots(figsize=(12, 8))
 
+            # 绘制中心线
             x, y = centerline.line.xy
             ax.plot(x, y, color="gray", linewidth=2)
+
             # 绘制清沟
             x = [point.x for point in ditch.points]
             y = [point.y for point in ditch.points]
             ax.plot(x, y, label=f"Ditch {ditch.id}", color="blue", linewidth=2)
-
-            # 绘制端点
+            sqr=math.sqrt((end_point.x - start_point.x) ** 2 + (end_point.y - start_point.y) ** 2)
+            # 绘制文本，展示南北长度，调整字体样式和颜色
+            ax.text(0.6, 0.2, f"North Length: {north_length:.2f} meters", color='#4e3629', fontsize=14,
+                    fontweight='light', fontname='sans-serif', transform=ax.transAxes, ha='center', va='center')
+            ax.text(0.6, 0.1, f"South Length: {south_length:.2f} meters", color='#4e3629', fontsize=14,
+                    fontweight='light', fontname='sans-serif', transform=ax.transAxes, ha='center', va='center')
+            ax.text(0.6, 0.3, f"ditch: {ditch_length:.2f} meters", color='#4e3629', fontsize=14,
+                    fontweight='light', fontname='sans-serif', transform=ax.transAxes, ha='center', va='center')
             ax.scatter(start_point.x, start_point.y, color='red', label='Start Point', zorder=5)
             ax.scatter(end_point.x, end_point.y, color='purple', label='End Point', zorder=5)
 
-            # 绘制起点投影点
             if proj_start_1_point:
                 ax.scatter(proj_start_1_point.x, proj_start_1_point.y, color='orange', zorder=5, s=10)
                 ax.plot([start_point.x, proj_start_1_point.x], [start_point.y, proj_start_1_point.y], color='orange',
@@ -85,6 +98,7 @@ def process_ditch_endpoints(ditchs, closed_shapes, centerline, save_path=None, l
                 ax.plot([end_point.x, proj_end_2_point.x], [end_point.y, proj_end_2_point.y], color='cyan',
                         linestyle='--')
 
+            # 绘制封闭形状
             for j, shape in enumerate(closed_shapes):
                 hash_input = str(j).encode('utf-8')
                 hash_digest = hashlib.md5(hash_input).hexdigest()
@@ -110,14 +124,14 @@ def process_ditch_endpoints(ditchs, closed_shapes, centerline, save_path=None, l
             ax.set_aspect('equal', adjustable='box')
             plt.grid(True)
 
+            # 保存或展示图像
             if save_path:
                 if not os.path.exists(save_path):
                     os.makedirs(save_path)
-                    # print(f"文件夹 {save_path} 已创建。")
 
-                plt.savefig(f"{save_path}/ditch_{ditch.id}_projections.png", dpi=300, bbox_inches='tight')
-                # print(f"图像已保存到 {save_path}/ditch_{ditch.id}_projections.png")
+                plt.savefig(f"{save_path}/ditch_{ditch.id}_projections.png", dpi=100, bbox_inches='tight')
                 plt.close()
             else:
                 plt.show()
+
     return results

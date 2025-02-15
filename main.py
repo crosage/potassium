@@ -4,7 +4,9 @@ import os
 from processing.close_shape import generate_closed_shapes_with_polylines
 from processing.normals import generate_infinite_normals_on_linestring_with_polyline
 from file_io.file_io import (
-    load_polylines_from_shp,
+    load_polylines_from_shp, load_north_south_lines_from_json, save_north_south_lines_to_json,
+    load_merged_polyline_from_json, save_merged_polyline_to_json, load_split_points_from_file,
+    save_split_points_to_file, load_closed_shapes_from_file, save_closed_shapes_to_file,
 )
 from processing.ditch import process_ditch_endpoints
 from processing.merging import merge_polylines
@@ -14,60 +16,86 @@ from shapely.geometry import LineString, Point
 def check_file_exists(file_path):
     return os.path.exists(file_path)
 
-def work(meters):
+def smooth_work(meters):
     os.makedirs("output", exist_ok=True)
+
+    # 1. 加载中心线和边界线数据
     print("1. 加载多段线数据...")
     centerlines = load_polylines_from_shp(f"data/arc_smooth/PEAK_{meters}.shp")
     boundaries = load_polylines_from_shp("data/南北线_修改后.shp")
 
     # 2. 合并多段线
-    print("2. 合并多段线... 开始计算。")
-    merged_polyline = merge_polylines(centerlines, log=False)
+    merged_polyline_path = f"output/merged_polyline_PEAK{meters}.json"
+    if check_file_exists(merged_polyline_path):
+        print("2. 合并多段线... 已检测到缓存文件，跳过合并步骤。")
+        merged_polyline = load_merged_polyline_from_json(merged_polyline_path)
+        # plot_polyline(merged_polyline, title="Merged Polyline Visualization")
+    else:
+        print("2. 合并多段线... 开始计算。")
+        merged_polyline = merge_polylines(centerlines, log=False)
+        save_merged_polyline_to_json(merged_polyline, merged_polyline_path)
+        # plot_polyline(merged_polyline, title="Merged Polyline Visualization")
 
     # 3. 分割南北线
-    print("3. 分割多段线... 开始计算。")
-    work_polyline = boundaries[0].line
-    coords = list(work_polyline.coords)
-    min_x_point = min(coords, key=lambda p: p[0])
-    min_y_point = min(coords, key=lambda p: p[1])
-    split_point1 = Point(min_x_point)
-    split_point2 = Point(min_y_point)
-    min_x_index = coords.index(split_point1.coords[0])
-    min_y_index = coords.index(split_point2.coords[0])
-    north_line, south_line = split_polyline_by_points(
-        LineString(work_polyline),
-        split_point1,
-        split_point2,
-        min_x_index,
-        min_y_index,
-    )
+    split_lines_path = "output/north_south_lines.json"
+    if check_file_exists(split_lines_path):
+        print("3. 分割多段线... 已检测到缓存文件，跳过分割步骤。")
+        north_line, south_line = load_north_south_lines_from_json(split_lines_path)
+    else:
+        print("3. 分割多段线... 开始计算。")
+        work_polyline=boundaries[0].line
+        coords = list(work_polyline.coords)
+        min_x_point = min(coords, key=lambda p: p[0])
+        min_y_point = min(coords, key=lambda p: p[1])
+        split_point1 = Point(min_x_point)
+        split_point2 = Point(min_y_point)
+        min_x_index = coords.index(split_point1.coords[0])
+        min_y_index = coords.index(split_point2.coords[0])
+        north_line, south_line = split_polyline_by_points(
+            LineString(work_polyline),
+            split_point1,
+            split_point2,
+            min_x_index,
+            min_y_index,
+            log=True
+        )
+        save_north_south_lines_to_json(north_line, south_line, split_lines_path)
 
     # 4. 生成法线
-    print("4. 生成法线... 开始计算。")
-    normals = generate_infinite_normals_on_linestring_with_polyline(
-        merged_polyline.line,
-        north_line,
-        south_line,
-        interval=1000
-    )
+    normals_path = f"output/normals_PEAK{meters}.json"
+    if check_file_exists(normals_path):
+        print("4. 生成法线... 已检测到缓存文件，跳过法线生成步骤。")
+        normals = load_split_points_from_file(normals_path)
+    else:
+        print("4. 生成法线... 开始计算。")
+        normals = generate_infinite_normals_on_linestring_with_polyline(
+            merged_polyline.line,
+            north_line,
+            south_line,
+            interval=1000
+        )
+        save_split_points_to_file(normals, normals_path)
 
     # 5. 封闭形状生成
-    print("5. 封闭形状生成... 开始计算。")
-    closed_shapes = generate_closed_shapes_with_polylines(normals, north_line, south_line, log=False)
+    closed_shapes_path = f"output/closed_shapes_PEAK{meters}.json"
+    if check_file_exists(closed_shapes_path):
+        print("5. 封闭形状生成... 已检测到缓存文件，跳过封闭形状生成步骤。")
+        closed_shapes = load_closed_shapes_from_file(closed_shapes_path)
+    else:
+        print("5. 封闭形状生成... 开始计算。")
+        closed_shapes = generate_closed_shapes_with_polylines(normals, north_line, south_line, log=False)
+        save_closed_shapes_to_file(closed_shapes, closed_shapes_path)
 
     # 6. 检查点是否在封闭形状内部
-    ditch_file = "data\\20230305清沟_hz.shp"
+    ditch_file="data\\20230305清沟_hz.shp"
     ditchs = load_polylines_from_shp(ditch_file, False)
-    process_ditch_endpoints(ditchs, closed_shapes, merged_polyline, f"output\ditch{meters}", True)
-
+    process_ditch_endpoints(ditchs,closed_shapes,north_line,south_line,merged_polyline,f"output\ditch_PEAK{meters}",True)
 
 def main():
-    work(1000)
-    work(5000)
-    work(6000)
-    work(7000)
-    work(10000)
-    work(12000)
+    smooth_work("SM2_1000")
+    smooth_work("SM2_5000")
+    smooth_work("SM2_6000")
+    smooth_work("SM2_10000")
 
 if __name__ == "__main__":
     main()
