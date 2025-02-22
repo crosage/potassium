@@ -44,7 +44,7 @@ def process_ditch_endpoints(ditchs, closed_shapes,north_line,south_line, centerl
         north_length=extract_subcurve(north_line,proj_start_1_point,proj_end_1_point).length
         south_length=extract_subcurve(south_line,proj_start_2_point,proj_end_2_point).length
         ditch_length=extract_subcurve(ditch.line,ditch.points[0],ditch.points[-1]).length
-        # print(f"北岸结果：{north_length}    南岸结果：{south_length}")
+        print(f"ditch{idx}结果{ditch_length}")
         # 存储结果
         results.append({
             "ditch_id": ditch.id,
