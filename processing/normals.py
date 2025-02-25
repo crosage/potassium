@@ -1,8 +1,89 @@
 
 import numpy as np
-from shapely.geometry import LineString
 from tqdm import tqdm
+from shapely.geometry import LineString
+from collections import defaultdict
+from rtree import index
 
+# 去除交叉法线的处理
+
+def remove_crossing_normals(points_with_normals):
+    """
+    去除相交的法线，只保留不交叉的法线。(使用RTree优化过程)
+    """
+    n = len(points_with_normals)
+    alive = [True] * n  # 标记法线是否存活
+
+    #初始化RTree树
+    idx = index.Index(properties=index.Property(dimension=2))
+    for i in range(n):
+        line = points_with_normals[i][1]
+        idx.insert(i, line.bounds)
+
+    # 初始化交叉次数和相交关系
+    crossings = {}
+    intersecting_pairs = {}
+
+    # 初始统计交叉次数和相交关系
+    for i in range(n):
+        if not alive[i]:
+            continue
+        line1 = points_with_normals[i][1]
+        cross_count = 0
+        intersecting = set()
+
+        candidates=list(idx.intersection(line1.bounds))
+
+        for j in candidates:
+            if i == j or not alive[j]:
+                continue
+            line2 = points_with_normals[j][1]
+            if line1.intersects(line2):
+                cross_count += 1
+                intersecting.add(j)
+        crossings[i] = cross_count
+        intersecting_pairs[i] = intersecting
+
+    # 计算初始交叉的法线数目
+    crossing_lines = [i for i in crossings if crossings[i] > 0 and alive[i]]
+    total_crossings = len(crossing_lines)
+
+    pbar = tqdm(total=total_crossings, desc="Removing crossing normals", unit="line")
+    previous_crossings = total_crossings
+
+    while total_crossings > 0:
+        # 找到当前交叉次数最多的存活法线
+        candidates = [i for i in crossings if alive[i] and crossings[i] > 0]
+        if not candidates:
+            break
+        max_cross_index = max(candidates, key=lambda x: crossings[x])
+
+        # 移除该法线（标记为非存活）
+        alive[max_cross_index] = False
+
+        # 更新与该法线相交的其他法线的交叉次数
+        for m in intersecting_pairs.get(max_cross_index, set()):
+            if alive[m]:
+                crossings[m] -= 1
+                intersecting_pairs[m].discard(max_cross_index)
+
+        # 从字典中移除被删除的法线记录
+        del crossings[max_cross_index]
+        del intersecting_pairs[max_cross_index]
+
+        # 重新计算剩余交叉法线数目
+        current_crossing = sum(1 for i in crossings if alive[i] and crossings[i] > 0)
+        progress_increment = previous_crossings - current_crossing
+        pbar.update(progress_increment)
+        pbar.set_postfix({"Remaining": current_crossing})
+        previous_crossings = current_crossing
+        total_crossings = current_crossing
+
+    pbar.set_postfix({"Final count": sum(alive)})
+    pbar.close()
+
+    # 收集存活的法线
+    return [p for i, p in enumerate(points_with_normals) if alive[i]]
 
 def generate_infinite_normals_on_linestring_with_polyline(line, north, south, interval=100):
     """
@@ -16,7 +97,7 @@ def generate_infinite_normals_on_linestring_with_polyline(line, north, south, in
     """
     line_length = line.length
     points_with_normals = []  # 用于存储每个点和对应的法线
-
+    print(f"分割距离为{interval}")
     # 使用 tqdm 来创建进度条
     pbar = tqdm(range(0, int(line_length) + 1, interval), desc="Processing normals", unit="point")
 
@@ -84,70 +165,6 @@ def generate_infinite_normals_on_linestring_with_polyline(line, north, south, in
             continue
 
     pbar.set_postfix({"Processed": len(points_with_normals)})
-
-    # 去除交叉法线的处理
-    def remove_crossing_normals(points_with_normals):
-        """
-        去除相交的法线，只保留不交叉的法线。
-        """
-        # 初始时统计交叉法线的数量
-        crossings = {}
-        for i, (_, line1) in enumerate(points_with_normals):
-            crossings[i] = 0
-            for j, (_, line2) in enumerate(points_with_normals):
-                if i != j and line1.intersects(line2):
-                    crossings[i] += 1
-
-        # 计算总共交叉的法线数
-        crossing_lines = [index for index, count in crossings.items() if count > 0]
-        total_crossings = len(crossing_lines)
-
-        # 初始化进度条，total 设置为交叉法线的数量
-        pbar = tqdm(total=total_crossings, desc="Removing crossing normals", unit="line")
-
-        previous_crossings = total_crossings  # 初始化前一个交叉法线数
-
-        while total_crossings > 0:
-            try:
-                # 找到交点最多的法线并移除
-                max_cross_index = max(crossings, key=crossings.get)
-                max_cross_count = crossings[max_cross_index]
-
-                if max_cross_count == 0:
-                    break  # 没有交叉的法线，跳出循环
-
-                # 移除交叉的法线
-                points_with_normals.pop(max_cross_index)
-
-                # 重新计算交叉法线数量
-                crossings = {}
-                for i, (_, line1) in enumerate(points_with_normals):
-                    crossings[i] = 0
-                    for j, (_, line2) in enumerate(points_with_normals):
-                        if i != j and line1.intersects(line2):
-                            crossings[i] += 1
-
-                # 重新计算交叉法线数目
-                crossing_lines = [index for index, count in crossings.items() if count > 0]
-                total_crossings = len(crossing_lines)
-
-                # 计算进度条的增量
-                progress_increment = previous_crossings - total_crossings
-                previous_crossings = total_crossings  # 更新为当前交叉法线数
-
-                # 更新进度条
-                pbar.set_postfix({"Remaining": total_crossings})
-                pbar.update(progress_increment)  # 根据交叉法线数的变化更新进度条
-
-            except Exception as e:
-                print(f"Error removing crossing normal: {e}")
-                break
-
-        pbar.set_postfix({"Final count": len(points_with_normals)})
-        pbar.close()  # 关闭进度条
-
-        return points_with_normals
-
     points_with_normals = remove_crossing_normals(points_with_normals)
     pbar.set_postfix({"Final count": len(points_with_normals)})
 

@@ -41,10 +41,18 @@ def process_ditch_endpoints(ditchs, closed_shapes,north_line,south_line, centerl
             proj_end_1_point = None
             proj_end_2_point = None
             print(f"⚠️ 清沟 {ditch.id} 的终点不在任何 ClosedShape 中。")
+
+        proj_start_centerline=centerline.line.project(start_point)
+        proj_start_centerline_point=centerline.line.interpolate(proj_start_centerline)
+        proj_end_centerline=centerline.line.project(end_point)
+        proj_end_centerline_point=centerline.line.interpolate(proj_end_centerline)
+
         north_length=extract_subcurve(north_line,proj_start_1_point,proj_end_1_point).length
         south_length=extract_subcurve(south_line,proj_start_2_point,proj_end_2_point).length
         ditch_length=extract_subcurve(ditch.line,ditch.points[0],ditch.points[-1]).length
-        print(f"ditch{idx}结果{ditch_length}")
+        centerline_length=extract_subcurve(centerline.line,proj_start_centerline_point,proj_end_centerline_point).length
+
+        # print(f"ditch{idx}结果{ditch_length}")
         # 存储结果
         results.append({
             "ditch_id": ditch.id,
@@ -76,9 +84,13 @@ def process_ditch_endpoints(ditchs, closed_shapes,north_line,south_line, centerl
                     fontweight='light', fontname='sans-serif', transform=ax.transAxes, ha='center', va='center')
             ax.text(0.6, 0.3, f"ditch: {ditch_length:.2f} meters", color='#4e3629', fontsize=14,
                     fontweight='light', fontname='sans-serif', transform=ax.transAxes, ha='center', va='center')
+            ax.text(0.6, 0.4, f"centerline: {centerline_length:.2f} meters", color='#4e3629', fontsize=14,
+                    fontweight='light', fontname='sans-serif', transform=ax.transAxes, ha='center', va='center')
+
             ax.scatter(start_point.x, start_point.y, color='red', label='Start Point', zorder=5)
             ax.scatter(end_point.x, end_point.y, color='purple', label='End Point', zorder=5)
 
+            #起点投影点
             if proj_start_1_point:
                 ax.scatter(proj_start_1_point.x, proj_start_1_point.y, color='orange', zorder=5, s=10)
                 ax.plot([start_point.x, proj_start_1_point.x], [start_point.y, proj_start_1_point.y], color='orange',
@@ -88,7 +100,7 @@ def process_ditch_endpoints(ditchs, closed_shapes,north_line,south_line, centerl
                 ax.plot([start_point.x, proj_start_2_point.x], [start_point.y, proj_start_2_point.y], color='cyan',
                         linestyle='--')
 
-            # 绘制终点投影点
+            #终点投影点
             if proj_end_1_point:
                 ax.scatter(proj_end_1_point.x, proj_end_1_point.y, color='orange', zorder=5, s=10)
                 ax.plot([end_point.x, proj_end_1_point.x], [end_point.y, proj_end_1_point.y], color='orange',
@@ -97,6 +109,7 @@ def process_ditch_endpoints(ditchs, closed_shapes,north_line,south_line, centerl
                 ax.scatter(proj_end_2_point.x, proj_end_2_point.y, color='cyan', zorder=5, s=10)
                 ax.plot([end_point.x, proj_end_2_point.x], [end_point.y, proj_end_2_point.y], color='cyan',
                         linestyle='--')
+
 
             # 绘制封闭形状
             for j, shape in enumerate(closed_shapes):
