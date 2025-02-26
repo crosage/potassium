@@ -4,12 +4,13 @@ import os
 from matplotlib import pyplot as plt
 from tqdm import tqdm
 from processing.splitting import extract_subcurve
-from utils.helpers import find_point_in_closed_shapes
+from utils.helpers import make_shape_finder
 
 
 def process_ditch_endpoints(ditchs, closed_shapes,north_line,south_line, centerline, save_path=None, log=True):
     results = []
     print(f"{type(north_line)}   {type(south_line)}")
+    finder=make_shape_finder(closed_shapes)
     for idx, ditch in tqdm(enumerate(ditchs), total=len(ditchs), desc="处理清沟", unit="个"):
         if len(ditch.points) < 2:
             print(f"⚠️ 警告：清沟 {ditch.id} 只有一个点，跳过。")
@@ -19,7 +20,7 @@ def process_ditch_endpoints(ditchs, closed_shapes,north_line,south_line, centerl
         end_point = ditch.points[-1]
 
         # 处理起点
-        start_index, start_shape = find_point_in_closed_shapes(start_point, closed_shapes)
+        start_index, start_shape = finder(start_point)
         if start_shape:
             proj_start_1 = start_shape.tangent_line_1.project(start_point)
             proj_start_2 = start_shape.tangent_line_2.project(start_point)
@@ -31,7 +32,7 @@ def process_ditch_endpoints(ditchs, closed_shapes,north_line,south_line, centerl
             print(f"⚠️ 清沟 {ditch.id} 的起点不在任何 ClosedShape 中。")
 
         # 处理终点
-        end_index, end_shape = find_point_in_closed_shapes(end_point, closed_shapes)
+        end_index, end_shape = finder(end_point)
         if end_shape:
             proj_end_1 = end_shape.tangent_line_1.project(end_point)
             proj_end_2 = end_shape.tangent_line_2.project(end_point)
@@ -110,6 +111,15 @@ def process_ditch_endpoints(ditchs, closed_shapes,north_line,south_line, centerl
                 ax.plot([end_point.x, proj_end_2_point.x], [end_point.y, proj_end_2_point.y], color='cyan',
                         linestyle='--')
 
+            # 绘制起点和终点的投影线
+            if proj_start_centerline_point:
+                ax.scatter(proj_start_centerline_point.x, proj_start_centerline_point.y, color='lime', zorder=5, s=30)
+                ax.plot([start_point.x, proj_start_centerline_point.x], [start_point.y, proj_start_centerline_point.y], color='lime', linestyle='--', linewidth=2)
+
+            if proj_end_centerline_point:
+                ax.scatter(proj_end_centerline_point.x, proj_end_centerline_point.y, color='lime', zorder=5, s=30)
+                ax.plot([end_point.x, proj_end_centerline_point.x], [end_point.y, proj_end_centerline_point.y], color='lime', linestyle='--', linewidth=2)
+
 
             # 绘制封闭形状
             for j, shape in enumerate(closed_shapes):
@@ -118,7 +128,7 @@ def process_ditch_endpoints(ditchs, closed_shapes,north_line,south_line, centerl
                 color = '#' + hash_digest[:6]
 
                 px, py = shape.polygon.exterior.xy
-                ax.fill(px, py, color=color, alpha=0.5, label=f"Closed Shape {j}" if j == 0 else "")
+                ax.fill(px, py, color=color, alpha=0.5)
                 ax.plot(px, py, color="red", linewidth=0.7)
 
             # 设置展示范围：清沟周围上下左右 1000 米

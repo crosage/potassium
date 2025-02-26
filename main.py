@@ -167,11 +167,11 @@ def origin_work(name):
     process_ditch_endpoints(ditchs,closed_shapes,north_line,south_line,merged_polyline,f"output\ditch_origin",True)
 
 def main():
-    origin_work("中心线平滑.shp")
-    # smooth_work("SM2_1000")
-    # smooth_work("SM2_5000")
-    # smooth_work("SM2_6000")
-    # smooth_work("SM2_10000")
+    # origin_work("中心线平滑.shp")
+    smooth_work("SM2_1000")
+    smooth_work("SM2_5000")
+    smooth_work("SM2_6000")
+    smooth_work("SM2_10000")
 
 if __name__ == "__main__":
     main()

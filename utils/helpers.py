@@ -1,4 +1,5 @@
 from matplotlib import pyplot as plt
+from rtree import index
 from shapely.geometry import LineString, Point
 from shapely.ops import linemerge
 
@@ -37,15 +38,30 @@ def find_intersection(line1, line2):
     return None
 
 
-def find_point_in_closed_shapes(point, closed_shapes):
+def make_shape_finder(closed_shapes):
     """
-    判断一个点是否位于封闭形状内部。
+    创建并返回一个针对固定封闭形状的查询函数，该函数使用Rtree进行优化。
     """
+    # 构建Rtree索引
+    idx = index.Index()
     for i, shape in enumerate(closed_shapes):
-        if shape.polygon.contains(point):
-            return i, shape
-    return None
+        # 获取形状的边界框（min_x, min_y, max_x, max_y）
+        bbox = shape.polygon.bounds
+        idx.insert(i, bbox)
 
+    def find_point(point):
+        # 查询点的坐标范围（作为矩形）
+        query_bbox = (point.x, point.y, point.x, point.y)
+        # 获取所有相交的候选索引
+        candidate_indices = idx.intersection(query_bbox)
+        # 按原始顺序检查候选形状
+        for i in sorted(candidate_indices):
+            shape = closed_shapes[i]
+            if shape.polygon.contains(point):
+                return i, shape
+        return None
+
+    return find_point
 
 def merge_lines(lines):
     """
