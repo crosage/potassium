@@ -77,13 +77,13 @@ def smooth_work(meters):
         save_split_points_to_file(normals, normals_path)
 
     # 5. 封闭形状生成
-    closed_shapes_path = f"output/closed_shapes_PEAK{meters}.json"
+    closed_shapes_path = f"output/closed_shapes_PEAK{meters}_split.json"
     if check_file_exists(closed_shapes_path):
         print("5. 封闭形状生成... 已检测到缓存文件，跳过封闭形状生成步骤。")
         closed_shapes = load_closed_shapes_from_file(closed_shapes_path)
     else:
         print("5. 封闭形状生成... 开始计算。")
-        closed_shapes = generate_closed_shapes_with_polylines(normals, north_line, south_line, log=False)
+        closed_shapes = generate_closed_shapes_with_polylines(normals, north_line, south_line,500, log=False)
         save_closed_shapes_to_file(closed_shapes, closed_shapes_path)
 
     # 6. 检查点是否在封闭形状内部
@@ -152,13 +152,13 @@ def origin_work(name):
         save_split_points_to_file(normals, normals_path)
 
     # 5. 封闭形状生成
-    closed_shapes_path = f"output/closed_shapes_origin.json"
+    closed_shapes_path = f"output/closed_shapes_origin_split.json"
     if check_file_exists(closed_shapes_path):
         print("5. 封闭形状生成... 已检测到缓存文件，跳过封闭形状生成步骤。")
         closed_shapes = load_closed_shapes_from_file(closed_shapes_path)
     else:
         print("5. 封闭形状生成... 开始计算。")
-        closed_shapes = generate_closed_shapes_with_polylines(normals, north_line, south_line, log=False)
+        closed_shapes = generate_closed_shapes_with_polylines(normals, north_line, south_line,500, log=False)
         save_closed_shapes_to_file(closed_shapes, closed_shapes_path)
 
     # 6. 检查点是否在封闭形状内部
@@ -167,7 +167,7 @@ def origin_work(name):
     process_ditch_endpoints(ditchs,closed_shapes,north_line,south_line,merged_polyline,f"output\ditch_origin",True)
 
 def main():
-    # origin_work("中心线平滑.shp")
+    origin_work("中心线平滑.shp")
     smooth_work("SM2_1000")
     smooth_work("SM2_5000")
     smooth_work("SM2_6000")
