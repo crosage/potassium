@@ -13,6 +13,9 @@ from processing.merging import merge_polylines
 from processing.splitting import split_polyline_by_points
 from shapely.geometry import LineString, Point
 
+from visualization.plot import plot_normals, plot_closed_shapes
+
+
 def check_file_exists(file_path):
     return os.path.exists(file_path)
 
@@ -66,6 +69,8 @@ def smooth_work(meters):
     if check_file_exists(normals_path):
         print("4. 生成法线... 已检测到缓存文件，跳过法线生成步骤。")
         normals = load_split_points_from_file(normals_path)
+        plot_normals(normals, north_line, south_line, merged_polyline.line)
+
     else:
         print("4. 生成法线... 开始计算。")
         normals = generate_infinite_normals_on_linestring_with_polyline(
@@ -141,6 +146,7 @@ def origin_work(name):
     if check_file_exists(normals_path):
         print("4. 生成法线... 已检测到缓存文件，跳过法线生成步骤。")
         normals = load_split_points_from_file(normals_path)
+        # plot_normals(normals, north_line, south_line, merged_polyline.line)
     else:
         print("4. 生成法线... 开始计算。")
         normals = generate_infinite_normals_on_linestring_with_polyline(
@@ -156,6 +162,8 @@ def origin_work(name):
     if check_file_exists(closed_shapes_path):
         print("5. 封闭形状生成... 已检测到缓存文件，跳过封闭形状生成步骤。")
         closed_shapes = load_closed_shapes_from_file(closed_shapes_path)
+        plot_closed_shapes(closed_shapes, north_line, south_line, merged_polyline.line)
+
     else:
         print("5. 封闭形状生成... 开始计算。")
         closed_shapes = generate_closed_shapes_with_polylines(normals, north_line, south_line,500, log=False)
