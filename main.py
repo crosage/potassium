@@ -13,7 +13,7 @@ from processing.merging import merge_polylines
 from processing.splitting import split_polyline_by_points
 from shapely.geometry import LineString, Point
 
-from visualization.plot import plot_normals, plot_closed_shapes
+from visualization.plot import plot_normals, plot_closed_shapes, plot_polyline
 
 
 def check_file_exists(file_path):
@@ -25,6 +25,7 @@ def smooth_work(meters):
     # 1. 加载中心线和边界线数据
     print("1. 加载多段线数据...")
     centerlines = load_polylines_from_shp(f"data/arc_smooth/PEAK_{meters}.shp")
+
     boundaries = load_polylines_from_shp("data/南北线_修改后.shp")
 
     # 2. 合并多段线
@@ -37,7 +38,7 @@ def smooth_work(meters):
         print("2. 合并多段线... 开始计算。")
         merged_polyline = merge_polylines(centerlines, log=False)
         save_merged_polyline_to_json(merged_polyline, merged_polyline_path)
-        # plot_polyline(merged_polyline, title="Merged Polyline Visualization")
+        plot_polyline(merged_polyline, title="Merged Polyline Visualization")
 
     # 3. 分割南北线
     split_lines_path = "output/north_south_lines.json"
@@ -69,7 +70,7 @@ def smooth_work(meters):
     if check_file_exists(normals_path):
         print("4. 生成法线... 已检测到缓存文件，跳过法线生成步骤。")
         normals = load_split_points_from_file(normals_path)
-        plot_normals(normals, north_line, south_line, merged_polyline.line)
+        # plot_normals(normals, north_line, south_line, merged_polyline.line,x_min=-290000,x_max=-270000,y_min=4550000,y_max=4570000)
 
     else:
         print("4. 生成法线... 开始计算。")
@@ -86,13 +87,15 @@ def smooth_work(meters):
     if check_file_exists(closed_shapes_path):
         print("5. 封闭形状生成... 已检测到缓存文件，跳过封闭形状生成步骤。")
         closed_shapes = load_closed_shapes_from_file(closed_shapes_path)
+        # plot_closed_shapes(closed_shapes, north_line, south_line, merged_polyline.line,x_min=-290000,x_max=-270000,y_min=4550000,y_max=4570000)
+
     else:
         print("5. 封闭形状生成... 开始计算。")
         closed_shapes = generate_closed_shapes_with_polylines(normals, north_line, south_line,500, log=False)
         save_closed_shapes_to_file(closed_shapes, closed_shapes_path)
 
     # 6. 检查点是否在封闭形状内部
-    ditch_file="data\\20230305清沟_hz.shp"
+    ditch_file="data\\清沟汇总_2024-2025年度20250122.shp"
     ditchs = load_polylines_from_shp(ditch_file, False)
     process_ditch_endpoints(ditchs,closed_shapes,north_line,south_line,merged_polyline,f"output\ditch_PEAK{meters}",True)
 
@@ -101,7 +104,12 @@ def origin_work(name):
 
     # 1. 加载中心线和边界线数据
     print("1. 加载多段线数据...")
+    import geopandas as gpd
+    gdf = gpd.read_file(f"data/{name}").to_crs("EPSG:32650")
+    print(gdf.length.sum())
+    return
     centerlines = load_polylines_from_shp(f"data/{name}")
+
     boundaries = load_polylines_from_shp("data/南北线_修改后.shp")
 
     # 2. 合并多段线
@@ -146,7 +154,8 @@ def origin_work(name):
     if check_file_exists(normals_path):
         print("4. 生成法线... 已检测到缓存文件，跳过法线生成步骤。")
         normals = load_split_points_from_file(normals_path)
-        # plot_normals(normals, north_line, south_line, merged_polyline.line)
+        plot_normals(normals, north_line, south_line, merged_polyline.line,x_min=-520000,x_max=-500000,y_min=4200000,y_max=4220000)
+
     else:
         print("4. 生成法线... 开始计算。")
         normals = generate_infinite_normals_on_linestring_with_polyline(
@@ -162,24 +171,24 @@ def origin_work(name):
     if check_file_exists(closed_shapes_path):
         print("5. 封闭形状生成... 已检测到缓存文件，跳过封闭形状生成步骤。")
         closed_shapes = load_closed_shapes_from_file(closed_shapes_path)
-        plot_closed_shapes(closed_shapes, north_line, south_line, merged_polyline.line)
+        plot_closed_shapes(closed_shapes, north_line, south_line, merged_polyline.line,x_min=-520000,x_max=-500000,y_min=4200000,y_max=4220000)
 
     else:
         print("5. 封闭形状生成... 开始计算。")
-        closed_shapes = generate_closed_shapes_with_polylines(normals, north_line, south_line,500, log=False)
+        closed_shapes = generate_closed_shapes_with_polylines(normals, north_line, south_line,500, log=True)
         save_closed_shapes_to_file(closed_shapes, closed_shapes_path)
 
     # 6. 检查点是否在封闭形状内部
-    ditch_file="data\\20230305清沟_hz.shp"
+    ditch_file="data\\清沟汇总_2024-2025年度20250122.shp"
     ditchs = load_polylines_from_shp(ditch_file, False)
     process_ditch_endpoints(ditchs,closed_shapes,north_line,south_line,merged_polyline,f"output\ditch_origin",True)
 
 def main():
-    origin_work("中心线平滑.shp")
-    smooth_work("SM2_1000")
+    # origin_work("中心线平滑.shp")
+    # smooth_work("SM2_1000")
     smooth_work("SM2_5000")
-    smooth_work("SM2_6000")
-    smooth_work("SM2_10000")
+    # smooth_work("SM2_6000")
+    # smooth_work("SM2_10000")
 
 if __name__ == "__main__":
     main()

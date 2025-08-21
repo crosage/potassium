@@ -201,23 +201,42 @@ def load_merged_polyline_from_json(filename=None):
     points = [Point(coord['x'], coord['y']) for coord in data['points']]
     return Polyline(id=id, points=points)
 
+
 def load_polylines_from_shp(file_path, ignore=False):
-    gdf = gpd.read_file(file_path)
+    """
+    从 shapefile 加载多段线，转换坐标系，并包含其所有的属性。
+    """
+    try:
+        gdf = gpd.read_file(file_path, encoding='utf-8')
+    except Exception as e:
+        print(f"读取 shapefile 时出错: {e}")
+        return []
+
     print("原始 CRS:", gdf.crs)
+    #转化为米坐标系方便运算
     gdf = gdf.to_crs("EPSG:32650")
     print("转换后的 CRS:", gdf.crs)
 
     polylines = []
-    for idx, geom in enumerate(gdf.geometry):
-        if idx == 8 and ignore:
+    for index, row in gdf.iterrows():
+        if index == 8 and ignore:
             continue
-        if isinstance(geom, LineString):
-            points = [Point(coord) for coord in geom.coords]
-            polyline = Polyline(id=idx, points=points)
+        geom = row.geometry
+        if geom is None or geom.is_empty:
+            continue
+        attributes = row.to_dict()
+        attributes.pop('geometry')
+        def process_geom(line_geom, poly_id):
+            points = [Point(coord) for coord in line_geom.coords]
+            polyline_id = attributes.get('CODE', poly_id)
+            polyline = Polyline(id=polyline_id, points=points)
+            polyline.attributes = attributes
             polylines.append(polyline)
+
+        if isinstance(geom, LineString):
+            process_geom(geom, index)
         elif isinstance(geom, MultiLineString):
-            for sub_idx, line in enumerate(geom.geoms):
-                points = [Point(coord) for coord in line.coords]
-                polyline = Polyline(id=f"{idx}_{sub_idx}", points=points)
-                polylines.append(polyline)
+            for i, part in enumerate(geom.geoms):
+                process_geom(part, f"{index}_{i}")
+
     return polylines

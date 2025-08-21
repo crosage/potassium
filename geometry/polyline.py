@@ -4,9 +4,9 @@ class Polyline:
         self.id = id
         self.points = points
         self.line = LineString(self.points)
-
+        self.attributes = {}
     def __repr__(self):
-        return f"Polyline(id={self.id}, points={self.points})"
+        return f"Polyline(id={self.id}, points={self.points}, attributes={self.attributes})"
 
     def length_between_points(self, point1, point2):
         point1 = Point(point1)
