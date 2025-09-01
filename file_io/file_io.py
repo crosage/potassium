@@ -214,7 +214,7 @@ def load_polylines_from_shp(file_path, ignore=False):
 
     print("原始 CRS:", gdf.crs)
     #转化为米坐标系方便运算
-    gdf = gdf.to_crs("EPSG:32650")
+    gdf = gdf.to_crs("EPSG:32649")
     print("转换后的 CRS:", gdf.crs)
 
     polylines = []

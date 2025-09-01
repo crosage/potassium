@@ -233,7 +233,7 @@ def build_reports(
 # ========== 使用示例 ==========
 if __name__ == "__main__":
     per_row_df, per_ditch_df, metrics = build_reports(
-        auto_csv_path="output/ditch_PEAKSM2_5000/ditch_results.csv",
+        auto_csv_path="output/ditch_PAEK_SM2_5000/ditch_results.csv",
         manual_shp_path="data/清沟映射汇总_2024-2025年度20250122.shp",
         out_dir="output",
         code_field_auto="编码",

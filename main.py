@@ -32,6 +32,7 @@ def run_processing_pipeline(config):
             - centerline_path (str): 中心线shapefile的路径。
             - boundary_path (str): 边界线shapefile的路径。
             - ditch_path (str): 沟渠shapefile的路径。
+            - manual_ditch_path (str, optional): 人工清沟投影shapefile的路径。
             - output_dir (str): 输出目录。
             - normal_interval (int): 生成法线的间隔。
             - shape_max_length (int): 封闭形状的最大长度。
@@ -66,8 +67,8 @@ def run_processing_pipeline(config):
         print("2. 合并多段线... 开始计算。")
         merged_polyline = merge_polylines(centerlines, log=False)
         save_merged_polyline_to_json(merged_polyline, merged_polyline_path)
-        if plot_cfg:
-            plot_polyline(merged_polyline, title=f"Merged Polyline - {job_name}")
+    if plot_cfg:
+        plot_polyline(merged_polyline, title=f"Merged Polyline - {job_name}")
 
     # 3. 分割南北线 (如果文件不存在则计算)
     if check_file_exists(split_lines_path):
@@ -75,6 +76,7 @@ def run_processing_pipeline(config):
         north_line, south_line = load_north_south_lines_from_json(split_lines_path)
     else:
         print("3. 分割多段线... 开始计算。")
+
         work_polyline = boundaries[0].line
         coords = list(work_polyline.coords)
         # 基于业务逻辑寻找分割点
@@ -100,8 +102,8 @@ def run_processing_pipeline(config):
         )
         save_split_points_to_file(normals, normals_path)
 
-    if plot_cfg and "normals" in plot_cfg:
-        plot_normals(normals, north_line, south_line, merged_polyline.line, **plot_cfg["normals"])
+    # if plot_cfg and "normals" in plot_cfg:
+    #     plot_normals(normals, north_line, south_line, merged_polyline.line, **plot_cfg["normals"])
 
     # 5. 封闭形状生成
     if check_file_exists(closed_shapes_path):
@@ -110,29 +112,44 @@ def run_processing_pipeline(config):
     else:
         print("5. 封闭形状生成... 开始计算。")
         closed_shapes = generate_closed_shapes_with_polylines(
-            normals, north_line, south_line, max_length=config["shape_max_length"], log=False
+            normals, north_line, south_line, meters=config["shape_max_length"], log=False
         )
         save_closed_shapes_to_file(closed_shapes, closed_shapes_path)
 
-    if plot_cfg and "closed_shapes" in plot_cfg:
-        plot_closed_shapes(closed_shapes, north_line, south_line, merged_polyline.line, **plot_cfg["closed_shapes"])
+    # if plot_cfg and "closed_shapes" in plot_cfg:
+    #     plot_closed_shapes(closed_shapes, north_line, south_line, merged_polyline.line, **plot_cfg["closed_shapes"])
 
     # 6. 检查点是否在封闭形状内部
     print("6. 处理沟渠数据...")
-    ditchs = load_polylines_from_shp(config["ditch_path"], has_z=False)
+    ditchs = load_polylines_from_shp(config["ditch_path"], ignore=False)
+
+    manual_shp_path = config.get("manual_ditch_path") # 如果不存在，会返回 None
+
     process_ditch_endpoints(
-        ditchs, closed_shapes, north_line, south_line, merged_polyline, ditch_output_path_prefix, save_results=True
+        ditchs=ditchs,
+        closed_shapes=closed_shapes,
+        north_line=north_line,
+        south_line=south_line,
+        centerline=merged_polyline,
+        save_path=ditch_output_path_prefix,
+        log=True,
+        manual_shp_path=manual_shp_path
     )
 
     print(f"--- 任务: {job_name} 处理完成 ---")
 
 def main():
+    """主函数，定义并运行所有处理任务"""
+
+    # --- 任务配置区 ---
+    # 在这里定义所有需要运行的任务
     tasks = [
         {
-            "job_name": "PEAK_SM2_5000",
-            "centerline_path": "data/arc_smooth/PEAK_SM2_5000.shp",
+            "job_name": "PAEK_SM2_5000",
+            "centerline_path": "data/arc_smooth/PAEK_SM2_5000.shp",
             "boundary_path": "data/南北线_修改后.shp",
             "ditch_path": os.path.join("data", "清沟汇总_2024-2025年度20250122.shp"),
+            "manual_ditch_path": os.path.join("data", "清沟映射汇总_2024-2025年度20250122.shp"),
             "output_dir": "output",
             "normal_interval": 100,
             "shape_max_length": 500,
@@ -141,12 +158,28 @@ def main():
                 "closed_shapes": {"x_min": -290000, "x_max": -270000, "y_min": 4550000, "y_max": 4570000},
             }
         },
+        # 如果某个任务没有人工投影文件，只需不写 "manual_ditch_path" 这一行即可
+        # {
+        #     "job_name": "origin_no_manual",
+        #     "centerline_path": "data/中心线平滑.shp",
+        #     "boundary_path": "data/南北线_修改后.shp",
+        #     "ditch_path": os.path.join("data", "清沟汇总_2024-2025年度20250122.shp"),
+        #     "output_dir": "output",
+        #     "normal_interval": 100,
+        #     "shape_max_length": 500,
+        #     # ... 其他配置
+        # },
     ]
 
+    # 循环执行所有定义的任务
     for task_config in tasks:
         run_processing_pipeline(task_config)
 
+    # 如果需要计算 shapefile 总长度，可以单独写一个函数
+    # calc_shp_length("data/中心线平滑.shp")
+
 def calc_shp_length(shp_path, crs="EPSG:32650"):
+    """计算Shapefile中所有线段的总长度"""
     print(f"\n计算文件 '{shp_path}' 的总长度...")
     try:
         gdf = gpd.read_file(shp_path)
