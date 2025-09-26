@@ -16,6 +16,65 @@ def set_equal_aspect_ratio():
     plt.gca().set_aspect('equal', adjustable='box')
 
 
+def plot_cropping_results(
+        original_centerline: LineString,
+        original_north_line: LineString,
+        original_south_line: LineString,
+        cropped_centerline: LineString,
+        cropped_north_line: LineString,
+        cropped_south_line: LineString,
+        title="Smart Cropping Results",
+        save_path=None
+):
+    """
+    可视化智能裁剪的结果，对比裁剪前后的线条。
+
+    Args:
+        original_centerline (LineString): 原始中心线。
+        original_north_line (LineString): 原始北岸线。
+        original_south_line (LineString): 原始南岸线。
+        cropped_centerline (LineString): 裁剪后的中心线。
+        cropped_north_line (LineString): 裁剪后的北岸线。
+        cropped_south_line (LineString): 裁剪后的南岸线。
+        title (str, optional): 图像标题.
+        save_path (str, optional): 图像保存路径. 如果提供，则保存图像.
+    """
+    fig, ax = plt.subplots(figsize=(20, 12))
+
+    # --- 1. 绘制原始线条 (作为背景，使用虚线和较浅的颜色) ---
+    ax.plot(*original_centerline.xy, color='gray', linestyle='--', linewidth=1.5,
+            label='原始中心线 (Original Centerline)')
+    ax.plot(*original_north_line.xy, color='lightcoral', linestyle='--', linewidth=1.5,
+            label='原始北岸线 (Original North Line)')
+    ax.plot(*original_south_line.xy, color='lightskyblue', linestyle='--', linewidth=1.5,
+            label='原始南岸线 (Original South Line)')
+
+    # --- 2. 绘制裁剪后的线条 (突出显示，使用实线和更醒目的颜色) ---
+    ax.plot(*cropped_centerline.xy, color='black', label='裁剪后中心线 (Cropped Centerline)')
+    ax.plot(*cropped_north_line.xy, color='red', label='裁剪后北岸线 (Cropped North Line)')
+    ax.plot(*cropped_south_line.xy, color='blue', label='裁剪后南岸线 (Cropped South Line)')
+
+    # --- 3. 标记出裁剪的起终点，使其更清晰 ---
+    start_point = cropped_centerline.boundary.geoms[0]
+    end_point = cropped_centerline.boundary.geoms[1]
+    ax.scatter([start_point.x], [start_point.y], color='green', s=150, zorder=5, label='共同起点 (Common Start)')
+    ax.scatter([end_point.x], [end_point.y], color='magenta', s=150, zorder=5, label='共同终点 (Common End)')
+
+    # --- 4. 设置图表属性 ---
+    ax.set_title(title, fontsize=16)
+    ax.set_xlabel("X Coordinate")
+    ax.set_ylabel("Y Coordinate")
+    ax.legend(loc='best')
+    ax.grid(True, linestyle='-', alpha=0.6)
+    ax.set_aspect('equal', adjustable='box')  # 保证地理坐标系比例正确
+
+    # --- 5. 保存和显示 ---
+    if save_path:
+        print(f"正在保存裁剪结果对比图到: {save_path}")
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+
+    plt.show()
+    plt.close(fig)  # 关闭图形，释放内存
 def plot_polyline(polyline, title="Polyline Visualization"):
     """
     绘制单条多段线。

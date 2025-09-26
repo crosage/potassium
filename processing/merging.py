@@ -9,7 +9,7 @@ from geometry.polyline import Polyline
 
 def find_starting_polyline(polylines):
     """
-    找到起始多段线。
+    找到起始多段线（通常选择最左下角的点所在的线）。
     """
     min_point = None
     starting_polyline = None
@@ -27,52 +27,82 @@ def find_starting_polyline(polylines):
 
 def find_closest_polyline(current_end, polylines):
     """
-    找到离当前端点最近的多段线。
+    找到离当前端点最近的多段线及其正确方向的点列表。
     """
     min_distance = float('inf')
     closest_polyline = None
-    closest_points = []
+    best_orientation_is_reversed = False
 
     for polyline in polylines:
         start_dist = current_end.distance(polyline.points[0])
-        end_dist = current_end.distance(polyline.points[-1])
-
         if start_dist < min_distance:
             min_distance = start_dist
             closest_polyline = polyline
-            closest_points = polyline.points  # 正向
+            best_orientation_is_reversed = False
 
+        end_dist = current_end.distance(polyline.points[-1])
         if end_dist < min_distance:
             min_distance = end_dist
             closest_polyline = polyline
-            closest_points = list(reversed(polyline.points))  # 反向
+            best_orientation_is_reversed = True
 
-    return closest_polyline, closest_points
+    if closest_polyline is None:
+        return None, [], float('inf')
+
+    if best_orientation_is_reversed:
+        closest_points = list(reversed(closest_polyline.points))
+    else:
+        closest_points = closest_polyline.points
+
+    return closest_polyline, closest_points, min_distance
 
 
 def merge_polylines(polylines, log=False):
     """
-    合并多段线，并可根据 log 参数进行可视化调试。
+    合并多段线（已重构为双向生长算法）。
     """
     if not polylines:
         return None
-    for i in polylines:
-        print(type(i))
-    print(type(polylines))
-    starting_polyline, merged_points = find_starting_polyline(polylines)
-    remaining_polylines = [p for p in polylines if p != starting_polyline]
+
+    polylines_to_process = set(polylines)
+
+    starting_polyline, merged_points = find_starting_polyline(list(polylines_to_process))
+    if not starting_polyline:
+        return None
+
+    polylines_to_process.remove(starting_polyline)
 
     step = 0
     if log:
         plot_polylines_with_labels_and_merged(polylines, merged_points, step)
 
-    while remaining_polylines:
+    while polylines_to_process:
+        current_start = merged_points[0]
         current_end = merged_points[-1]
-        closest_polyline, closest_points = find_closest_polyline(current_end, remaining_polylines)
-        print(f"最近的id为{closest_polyline.id} 当前end为{current_end} 端点为{closest_points[0]}和{closest_points[-1]}")
 
-        merged_points.extend(closest_points)
-        remaining_polylines.remove(closest_polyline)
+        # 寻找连接到尾部的最佳线段
+        poly_to_append, points_to_append, dist_to_end = find_closest_polyline(current_end, polylines_to_process)
+
+        # 寻找连接到头部的最佳线段
+        poly_to_prepend, points_to_prepend, dist_to_start = find_closest_polyline(current_start, polylines_to_process)
+
+        # 如果找不到任何可以连接的线段，则退出
+        if not poly_to_append and not poly_to_prepend:
+            break
+
+        # 决定是连接头部还是尾部
+        if dist_to_start < dist_to_end:
+            # 连接头部：将找到的线段反转后加到前面
+            points = list(reversed(points_to_prepend))
+            print(f"步骤 {step + 1}: 连接到头部 {current_start} -> 新线段 {poly_to_prepend.id} (连接点: {points[-1]})")
+            merged_points = points[:-1] + merged_points
+            polylines_to_process.remove(poly_to_prepend)
+        else:
+            # 连接尾部：将找到的线段追加到后面
+            print(
+                f"步骤 {step + 1}: 连接到尾部 {current_end} -> 新线段 {poly_to_append.id} (连接点: {points_to_append[0]})")
+            merged_points.extend(points_to_append[1:])
+            polylines_to_process.remove(poly_to_append)
 
         step += 1
         if log:
@@ -80,7 +110,6 @@ def merge_polylines(polylines, log=False):
 
     merged_polyline = Polyline(id="merged", points=merged_points)
     return merged_polyline
-
 
 def plot_polylines_with_labels_and_merged(polylines, merged_points=None, step=None):
     """
@@ -123,4 +152,50 @@ def plot_polylines_with_labels_and_merged(polylines, merged_points=None, step=No
     plt.ylabel("Latitude")
     plt.title(f'Polylines with Labels - Step {step}' if step is not None else 'Merged Polylines')
     plt.legend()
+    plt.show()
+
+
+def plot_merge_verification(original_polylines, merged_polyline):
+    """
+    绘制原始多段线和合并后的结果以进行验证。
+
+    参数:
+        original_polylines (list): 用于合并的原始多段线列表。
+        merged_polyline (Polyline): merge_polylines 函数返回的合并结果。
+    """
+    plt.figure(figsize=(12, 8))
+
+    # 1. 绘制所有原始线段作为背景参考
+    # 只为第一个线段添加标签，避免图例混乱
+    has_labeled = False
+    for polyline in original_polylines:
+        if not polyline.points:
+            continue
+        x = [p.x for p in polyline.points]
+        y = [p.y for p in polyline.points]
+        if not has_labeled:
+            plt.plot(x, y, color='gray', linestyle='--', linewidth=1.5, marker='.', label='Original Segments')
+            has_labeled = True
+        else:
+            plt.plot(x, y, color='gray', linestyle='--', linewidth=1.5, marker='.')
+
+    # 2. 绘制合并后的最终结果
+    if merged_polyline and merged_polyline.points:
+        x = [p.x for p in merged_polyline.points]
+        y = [p.y for p in merged_polyline.points]
+
+        # 使用醒目的颜色和样式突出显示合并结果
+        plt.plot(x, y, color='red', linewidth=3, marker='o', markersize=5, label='Merged Result')
+
+        # 标记最终的起点和终点
+        plt.scatter(x[0], y[0], color='green', s=150, zorder=5, label='Final Start', marker='o', edgecolors='black')
+        plt.scatter(x[-1], y[-1], color='blue', s=150, zorder=5, label='Final End', marker='s', edgecolors='black')
+
+    # 3. 设置图表属性
+    plt.title('Verification of Polyline Merging')
+    plt.xlabel('X Coordinate')
+    plt.ylabel('Y Coordinate')
+    plt.legend()
+    plt.grid(True)
+    plt.gca().set_aspect('equal', adjustable='box')  # 保持纵横比
     plt.show()

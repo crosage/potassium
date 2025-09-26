@@ -24,14 +24,14 @@ def get_default_path(key):
 # 北岸与南岸线相关操作
 # ========================
 
-def save_north_south_lines_to_json(north_line, south_line, filename=None):
+def save_left_right_lines_to_json(left_line, right_line, filename=None):
     """
     将北岸和南岸线保存为 JSON 文件。
     """
-    filename = filename or get_default_path("north_south_lines")
+    filename = filename or get_default_path("left_right_lines")
     data = {
-        'north_line': list(north_line.coords),
-        'south_line': list(south_line.coords)
+        'left_line': list(left_line.coords),
+        'right_line': list(right_line.coords)
     }
 
     with open(filename, 'w') as f:
@@ -39,17 +39,17 @@ def save_north_south_lines_to_json(north_line, south_line, filename=None):
     print(f"Lines saved to {filename}")
 
 
-def load_north_south_lines_from_json(filename=None):
+def load_left_right_lines_from_json(filename=None):
     """
     从 JSON 文件中加载北岸和南岸线。
     """
-    filename = filename or get_default_path("north_south_lines")
+    filename = filename or get_default_path("left_right_lines")
     with open(filename, 'r') as f:
         data = json.load(f)
 
-    north_line = LineString(data['north_line'])
-    south_line = LineString(data['south_line'])
-    return north_line, south_line
+    left_line = LineString(data['left_line'])
+    right_line = LineString(data['right_line'])
+    return left_line, right_line
 
 
 # ========================
@@ -202,12 +202,12 @@ def load_merged_polyline_from_json(filename=None):
     return Polyline(id=id, points=points)
 
 
-def load_polylines_from_shp(file_path, ignore=False):
+def load_polylines_from_shp(file_path, ignore=False,charset="UTF-8"):
     """
     从 shapefile 加载多段线，转换坐标系，并包含其所有的属性。
     """
     try:
-        gdf = gpd.read_file(file_path, encoding='utf-8')
+        gdf = gpd.read_file(file_path, encoding=charset)
     except Exception as e:
         print(f"读取 shapefile 时出错: {e}")
         return []

@@ -1,5 +1,6 @@
 from matplotlib import pyplot as plt
 from rtree import index
+from shapely import MultiLineString, GeometryCollection, Polygon
 from shapely.geometry import LineString, Point
 from shapely.ops import linemerge
 
@@ -74,6 +75,134 @@ def merge_lines(lines):
         return None
     except Exception as e:
         print(f"合并线段时发生错误: {e}")
+        return None
+
+
+def extract_subcurve_in_polygon_with_debug_plot(line, polygon, ditch_id='Unknown'):
+    """
+    提取线在多边形内的子曲线，并提供一个matplotlib绘图窗口用于调试。
+    """
+    # 1. 检查输入是否有效 (代码不变)
+    if not line or not polygon or not isinstance(line, LineString) or not isinstance(polygon, Polygon):
+        # print(f"*******************************{line} ")
+        return None
+    if line.is_empty or polygon.is_empty:
+        # print("###############################")
+        return None
+
+    # 2. 计算交集 (代码不变)
+    intersection = line.intersection(polygon)
+
+    # --- 新增的绘图调试部分 ---
+    fig, ax = plt.subplots(figsize=(10, 8))
+
+    # 绘制多边形
+    px, py = polygon.exterior.xy
+    ax.plot(px, py, 'g-', label='Polygon', linewidth=2)
+    ax.fill(px, py, 'g', alpha=0.1)
+
+    # 绘制原始的完整曲线
+    lx, ly = line.xy
+    ax.plot(lx, ly, 'b--', label='Original Line', linewidth=1, alpha=0.8)
+
+    # 绘制交集结果
+    if not intersection.is_empty:
+        if hasattr(intersection, 'geoms'):  # MultiLineString 或 GeometryCollection
+            for geom in intersection.geoms:
+                if isinstance(geom, LineString):
+                    ix, iy = geom.xy
+                    ax.plot(ix, iy, 'r-', label='Intersection', linewidth=3)
+        elif isinstance(intersection, LineString):  # LineString
+            ix, iy = intersection.xy
+            ax.plot(ix, iy, 'r-', label='Intersection', linewidth=3)
+
+    ax.set_title(f"Debug View for Ditch ID: {ditch_id}")
+    ax.set_xlabel("X coordinate")
+    ax.set_ylabel("Y coordinate")
+    ax.legend()
+    ax.grid(True)
+    ax.set_aspect('equal', adjustable='box')
+    plt.show()  # 显示图像，程序会在此暂停直到你关闭窗口
+    # --- 绘图部分结束 ---
+
+    # 3. 处理交集结果 (代码不变)
+    if intersection.is_empty:
+        return None
+    elif isinstance(intersection, (LineString, MultiLineString)):
+        return intersection
+    elif isinstance(intersection, GeometryCollection):
+        lines = [geom for geom in intersection.geoms if isinstance(geom, (LineString, MultiLineString))]
+        if not lines: return None
+        if len(lines) == 1: return lines[0]
+        all_lines = []
+        for item in lines:
+            if isinstance(item, LineString):
+                all_lines.append(item)
+            else:
+                all_lines.extend(list(item.geoms))
+        return MultiLineString(all_lines)
+    else:
+        return None
+
+
+def extract_subcurve_in_polygon(line, polygon):
+    """
+    提取输入线(line)位于多边形(polygon)内部的子曲线部分。
+
+    参数:
+    - line (LineString): 原始的完整曲线。
+    - polygon (Polygon): 用于裁剪的封闭多边形。
+
+    返回:
+    - LineString, MultiLineString, or None: 如果有相交的线段，则返回该线段。
+      如果完全不相交或只相交于点，则返回 None。
+    """
+    # 1. 检查输入是否有效
+    if not line or not polygon or not isinstance(line, LineString) or not isinstance(polygon, Polygon):
+        print(f"*******************************")
+        return None
+    if line.is_empty or polygon.is_empty:
+        print(f"###############################")
+        return None
+
+    # 2. 计算线与多边形的交集
+    intersection = line.intersection(polygon)
+
+    # 3. 处理交集结果
+    if intersection.is_empty:
+        # 情况A: 没有交集
+        print("A")
+        return None
+
+    elif isinstance(intersection, (LineString, MultiLineString)):
+        # 情况B: 理想情况，交集是线或多线
+        print("B")
+        return intersection
+
+    elif isinstance(intersection, GeometryCollection):
+        # 情况C: 交集是多种几何类型的集合（例如，线和点的混合）
+        # 我们只提取其中的线状部分
+        print("C")
+        lines = [geom for geom in intersection.geoms if isinstance(geom, (LineString, MultiLineString))]
+
+        if not lines:
+            return None  # 集合中没有线
+
+        # 如果只有一条线，直接返回
+        if len(lines) == 1:
+            return lines[0]
+
+        # 如果有多条线（通常是MultiLineString），将它们合并
+        all_lines = []
+        for item in lines:
+            if isinstance(item, LineString):
+                all_lines.append(item)
+            else:  # MultiLineString
+                all_lines.extend(list(item.geoms))
+        return MultiLineString(all_lines)
+
+    else:
+        # 情况D: 交集是点(Point)或多点(MultiPoint)，不是我们需要的“子曲线”
         return None
 
 

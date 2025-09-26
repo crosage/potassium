@@ -104,3 +104,65 @@ def plot_split_polyline(work_polyline, point1, point2, north_line, south_line):
     plt.legend()
     plt.grid(True)
     plt.show()
+
+def preprocess_crop_lines(centerline, left_line, right_line):
+    """
+    裁剪三条线（中心线、北/左岸、南/右岸），使它们具有相同的空间范围。
+
+    Args:
+        centerline (LineString): 河道中心线。
+        left_line (LineString): 北岸/左岸线。
+        right_line (LineString): 南岸/右岸线。
+
+    Returns:
+        tuple: 一个包含三条裁剪后LineString的元组
+               (cropped_centerline, cropped_left_line, cropped_right_line)。
+               如果不存在有效的重叠区域，则返回 (None, None, None)。
+    """
+    print("--- 开始执行智能裁剪预处理 ---")
+
+    # 1. 确定共同起点距离
+    # 获取岸线起点的投影位置
+    left_start_proj_dist = centerline.project(Point(left_line.coords[0]))
+    right_start_proj_dist = centerline.project(Point(right_line.coords[0]))
+
+    # 共同起点是所有起点中最“靠后”的那个
+    common_start_dist = max(left_start_proj_dist, right_start_proj_dist)
+    print(f"检测到共同起点位于中心线 {common_start_dist:.2f} 米处。")
+
+    # 2. 确定共同终点距离
+    # 获取岸线终点的投影位置
+    left_end_proj_dist = centerline.project(Point(left_line.coords[-1]))
+    right_end_proj_dist = centerline.project(Point(right_line.coords[-1]))
+
+    # 共同终点是所有终点中最“靠前”的那个
+    common_end_dist = min(centerline.length, left_end_proj_dist, right_end_proj_dist)
+    print(f"检测到共同终点位于中心线 {common_end_dist:.2f} 米处。")
+
+    # 3. 检查是否存在有效的重叠区域
+    if common_start_dist >= common_end_dist:
+        print("错误：三条线之间没有找到有效的重叠区域。")
+        return None, None, None
+
+    # 4. 执行裁剪
+    print("正在裁剪所有线以匹配共同范围...")
+
+    # 4.1 裁剪中心线 (最直接)
+    start_point_on_center = centerline.interpolate(common_start_dist)
+    end_point_on_center = centerline.interpolate(common_end_dist)
+    cropped_centerline = extract_subcurve(centerline, start_point_on_center, end_point_on_center)
+
+    # 4.2 裁剪北岸线
+    # 找到裁剪后的中心线端点在北岸线上的对应投影点
+    start_point_on_left = left_line.interpolate(left_line.project(start_point_on_center))
+    end_point_on_left = left_line.interpolate(left_line.project(end_point_on_center))
+    cropped_left_line = extract_subcurve(left_line, start_point_on_left, end_point_on_left)
+
+    # 4.3 裁剪南岸线
+    start_point_on_right = right_line.interpolate(right_line.project(start_point_on_center))
+    end_point_on_right = right_line.interpolate(right_line.project(end_point_on_center))
+    cropped_right_line = extract_subcurve(right_line, start_point_on_right, end_point_on_right)
+
+    print("--- 裁剪完成 ---")
+
+    return cropped_centerline, cropped_left_line, cropped_right_line

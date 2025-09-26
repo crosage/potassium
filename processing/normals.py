@@ -85,7 +85,7 @@ def remove_crossing_normals(points_with_normals):
     # 收集存活的法线
     return [p for i, p in enumerate(points_with_normals) if alive[i]]
 
-def generate_infinite_normals_on_linestring_with_polyline(line, north, south, interval=100):
+def generate_infinite_normals_on_linestring_with_polyline(line, north, south, interval=100,max_allowable_width=50000):
     """
     生成多段线上的法线，使用 north 和 south 作为参考线来计算法线方向。
 
@@ -156,6 +156,9 @@ def generate_infinite_normals_on_linestring_with_polyline(line, north, south, in
 
             if north_point and south_point:
                 normal_line = LineString([north_point, south_point])
+                if normal_line.length > max_allowable_width:
+                    # 如果长度超过50000米，则静默地舍弃掉，并继续下一次循环
+                    continue
                 points_with_normals.append((point, normal_line))
             else:
                 continue
