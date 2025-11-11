@@ -18,6 +18,8 @@ from processing.merging import merge_polylines, plot_merge_verification
 from processing.splitting import split_polyline_by_points, extract_subcurve, preprocess_crop_lines
 from shapely.geometry import LineString, Point
 
+from visualization.plot import plot_closed_shapes, plot_normals, plot_river_elements, plot_river_with_satellite
+
 
 # ==============================================================================
 # SECTION 1: 核心地理空间处理函数
@@ -49,6 +51,7 @@ def orient_line_by_coordinate(line: LineString) -> LineString:
 def run_processing_pipeline(config):
     """
     运行完整的地理数据处理流水线。
+    现在使用北侧大堤线和南侧大堤线进行河道划分。
     """
     job_name = config["job_name"]
     output_dir = config["output_dir"]
@@ -77,101 +80,77 @@ def run_processing_pipeline(config):
         save_merged_polyline_to_json(merged_polyline, merged_polyline_path)
     merged_polyline = merged_polyline.line
 
-    # 3. 加载已分割的左右岸线和大堤线
-    print("3. 加载左右岸线和大堤线数据...")
-    left_polylines = load_polylines_from_shp(config["left_line_path"])
-    right_polylines = load_polylines_from_shp(config["right_line_path"])
-    dam_line_polylines = load_polylines_from_shp(config["dam_line"], ignore=False, charset="GBK")
-    ori_dam_line = merge_polylines(dam_line_polylines, False).line
-    ori_left_line = merge_polylines(left_polylines).line
-    ori_right_line = merge_polylines(right_polylines).line
-    ori_left_line = orient_line_by_coordinate(ori_left_line)
-    ori_right_line = orient_line_by_coordinate(ori_right_line)
-    ori_dam_line = orient_line_by_coordinate(ori_dam_line)
-    print("左右岸线和大堤线加载完成。")
+    # 3. 加载南北大堤线（替代原来的左右岸线）
+    print("3. 加载南北大堤线数据...")
+    north_dam_polylines = load_polylines_from_shp(config["north_dam_line"], ignore=False, charset="GBK")
+    south_dam_polylines = load_polylines_from_shp(config["south_dam_line"], ignore=False, charset="GBK")
 
-    # 4. 裁剪左右岸和中心线
-    print("4. 裁剪左右岸线和中心线，防止出现错误相连")
-    centerline, dam_line, right_line = preprocess_crop_lines(merged_polyline, ori_dam_line, ori_right_line)
+    # 合并并矫正方向
+    north_dam_line = merge_polylines(north_dam_polylines, False).line
+    south_dam_line = merge_polylines(south_dam_polylines, False).line
+    north_dam_line = orient_line_by_coordinate(north_dam_line)
+    south_dam_line = orient_line_by_coordinate(south_dam_line)
+    print("南北大堤线加载完成。")
 
-    # 5. 生成法线
+    # 4. 裁剪线（如果需要的话，使用南北大堤线）
+    print("4. 裁剪中心线和大堤线，防止出现错误相连")
+    # 如果 preprocess_crop_lines 函数需要调整，可能需要修改参数
+    centerline, north_dam_line, south_dam_line = preprocess_crop_lines(
+        merged_polyline, north_dam_line, south_dam_line
+    )
+
+    # 5. 生成法线（使用北侧和南侧大堤线）
     if check_file_exists(normals_path):
         print(f"5. 生成法线... 检测到缓存文件，跳过。({normals_path})")
         normals = load_split_points_from_file(normals_path)
     else:
         print("5. 生成法线... 开始计算。")
         normals = generate_infinite_normals_on_linestring_with_polyline(
-            centerline, dam_line, right_line, interval=config["normal_interval"]
+            centerline, north_dam_line, south_dam_line, interval=config["normal_interval"]
         )
         save_split_points_to_file(normals, normals_path)
 
-    # 6. 封闭形状生成
+    # 6. 封闭形状生成（使用北侧和南侧大堤线）
     if check_file_exists(closed_shapes_path):
         print(f"6. 封闭形状生成... 检测到缓存文件，跳过。({closed_shapes_path})")
         closed_shapes = load_closed_shapes_from_file(closed_shapes_path)
     else:
         print("6. 封闭形状生成... 开始计算。")
         closed_shapes = generate_closed_shapes_with_polylines(
-            normals, dam_line, right_line, meters=config["shape_max_length"], log=False
+            normals, north_dam_line, south_dam_line, meters=config["shape_max_length"], log=False
         )
         save_closed_shapes_to_file(closed_shapes, closed_shapes_path)
 
     # 7. 处理沟渠数据
     print("7. 处理沟渠数据...")
-    ditchs = load_polylines_from_shp(config["ditch_path"], ignore=False)
+    ditches = load_polylines_from_shp(config["ditch_path"], ignore=False)
     manual_shp_path = config.get("manual_ditch_path")
+
+    # # 绘制卫星影像叠加图（使用南北大堤线）
+    # plot_river_with_satellite(
+    #     left_line=north_dam_line,  # 南侧大堤线（作为参考）
+    #     right_line=south_dam_line,  # 南侧大堤线
+    #     ditches=ditches,
+    #     center_line=centerline,
+    #     title="黄河研究区域卫星影像图 (2025-01-22)",
+    #     save_path='output/overview_20250122_full.png',
+    #     save_clean_path='output/overview_20250122_clean.png',
+    #     show_axis=True,
+    #     use_proxy=True
+    # )
+
+    # 调用处理函数（使用南北大堤线）
     process_ditch_endpoints(
-        ditchs=ditchs,
+        ditchs=ditches,
         closed_shapes=closed_shapes,
-        left_line=ori_left_line,
-        right_line=ori_right_line,
+        north_dam_line=north_dam_line,  # 传入北侧大堤线
+        south_dam_line=south_dam_line,  # 传入南侧大堤线
         centerline=merged_polyline,
         save_path=ditch_output_path_prefix,
         log=True,
-        manual_shp_path=manual_shp_path,
-        dam_line=dam_line
+        manual_shp_path=manual_shp_path
     )
     print(f"--- 任务: {job_name} 处理完成 ---")
-
-
-def preprocess_and_split_boundary(boundary_path, left_output_path, right_output_path, crs="EPSG:32649"):
-    """
-    预处理函数：加载单一边界线，将其分割为北岸和南岸，并分别保存为Shapefile。
-    """
-    print("--- 开始预处理：分割边界线 ---")
-    print(f"加载边界线: {boundary_path}")
-    boundaries = load_polylines_from_shp(boundary_path)
-    if not boundaries:
-        print("错误：未能从边界文件中加载任何线。")
-        return
-    boundary_line = merge_polylines(boundaries).line
-
-    print("正在寻找分割点...")
-    coords = list(boundary_line.coords)
-    min_x_point = min(coords, key=lambda p: p[0])
-    min_y_point = min(coords, key=lambda p: p[1])
-    split_point1 = Point(min_x_point)
-    split_point2 = Point(min_y_point)
-    min_x_index = coords.index(split_point1.coords[0])
-    min_y_index = coords.index(split_point2.coords[0])
-
-    print("正在分割线...")
-    left_line, right_line = split_polyline_by_points(
-        boundary_line, split_point1, split_point2, min_x_index, min_y_index, log=True
-    )
-
-    try:
-        print(f"正在保存北岸线到: {left_output_path}")
-        left_gdf = gpd.GeoDataFrame([{'geometry': left_line}], crs=crs)
-        left_gdf.to_file(left_output_path, driver='ESRI Shapefile', encoding='utf-8')
-
-        print(f"正在保存南岸线到: {right_output_path}")
-        right_gdf = gpd.GeoDataFrame([{'geometry': right_line}], crs=crs)
-        right_gdf.to_file(right_output_path, driver='ESRI Shapefile', encoding='utf-8')
-        print("--- 预处理完成 ---")
-    except Exception as e:
-        print(f"保存Shapefile时出错: {e}")
-
 
 # ==============================================================================
 # SECTION 2: 报告与分析函数
@@ -199,8 +178,9 @@ def generate_error_reports(auto_csv_path: str, out_dir: str):
 
     # 按 (CODE, RIVERPART) 聚合
     def agg_block(g):
+        # **MODIFIED: Removed dependency on "name" column for aggregation.**
         return pd.Series({
-            "name": g["name"].iloc[0], "records": len(g),
+            "records": len(g),
             "latest_date": pd.to_datetime(g["DATE"], errors="coerce").max(),
             "人工投影长度_mean": float(g["人工投影长度"].mean()),
             "堤坝线投影长度_mean": float(g["堤坝线投影长度"].mean()),
@@ -304,10 +284,13 @@ def generate_word_report(csv_path: str, image_folder: str, output_word_path: str
     doc.add_heading('清沟误差详细列表', level=1)
     for index, row in df_sorted.iterrows():
         try:
-            ditch_name = row['name']
+            # **MODIFIED: Use CODE and RIVERPART as primary identifiers, removing dependency on 'name'.**
             ditch_code = row['CODE']
-            # print(f"正在为Word报告处理: {ditch_name}, CODE: {ditch_code}")
-            doc.add_heading(f"清沟: {ditch_name} (CODE: {ditch_code})", level=2)
+            river_part = row['RIVERPART']
+            # Create a unique, file-safe identifier consistent with the image generation script.
+            unique_file_identifier = f"R_{ditch_code}_C_{river_part}"
+
+            doc.add_heading(f"清沟 (CODE: {ditch_code}, RIVERPART: {river_part})", level=2)
 
             # 数据表格
             table = doc.add_table(rows=4, cols=2)
@@ -322,9 +305,9 @@ def generate_word_report(csv_path: str, image_folder: str, output_word_path: str
                 table.rows[i].cells[0].text = key
                 table.rows[i].cells[1].text = value
 
-            # 插入图片
-            image_name = f"ditch__{ditch_name}__{ditch_code}__proj.png"
-            image_with_closedshape_name = f"ditch__{ditch_name}__{ditch_code}__closed.png"
+            # **MODIFIED: Construct image names using the new unique identifier.**
+            image_name = f"ditch__{unique_file_identifier}__proj.png"
+            image_with_closedshape_name = f"ditch__{unique_file_identifier}__closed.png"
             image_path = os.path.join(image_folder, image_name)
             image_with_closedshape_path = os.path.join(image_folder, image_with_closedshape_name)
 
@@ -333,13 +316,11 @@ def generate_word_report(csv_path: str, image_folder: str, output_word_path: str
 
             if os.path.exists(image_path):
                 p.add_run().add_picture(image_path, width=Inches(5.5))
-                # print(f"  - 已添加图片: '{image_name}'")
             else:
                 p.add_run(f"\n[警告: 图片未找到: {image_name}]").font.color.rgb = RGBColor(255, 0, 0)
 
             if os.path.exists(image_with_closedshape_path):
                 p.add_run().add_picture(image_with_closedshape_path, width=Inches(5.5))
-                # print(f"  - 已添加图片: '{image_with_closedshape_name}'")
             else:
                 p.add_run(f"\n[警告: 图片未找到: {image_with_closedshape_name}]").font.color.rgb = RGBColor(255, 0, 0)
 
@@ -359,185 +340,331 @@ def generate_word_report(csv_path: str, image_folder: str, output_word_path: str
     except Exception as e:
         print(f"保存Word文档时出错: {e}")
 
-
 # ==============================================================================
 # SECTION 3: 主执行模块
 # ==============================================================================
 
 def main():
-    """主函数，用于定义任务并运行整个流水线。"""
-    # --- 预处理步骤 ---
-    original_boundary_file = "data/南北线_修改后.shp"
-    left_line_output_file = "data/北岸线.shp"
-    right_line_output_file = "data/南岸线.shp"
-
-    if not os.path.exists(left_line_output_file) or not os.path.exists(right_line_output_file):
-        print("岸线文件不存在，开始执行预处理分割...")
-        preprocess_and_split_boundary(
-            boundary_path=original_boundary_file,
-            left_output_path=left_line_output_file,
-            right_output_path=right_line_output_file
-        )
-    else:
-        print("检测到已存在的岸线文件，跳过预处理。")
-
     # --- 任务定义 ---
     tasks = [
-        # {
-        #     "job_name": "20250106",
-        #     "centerline_path": r"D:\code\polyline\data\arc_smooth\PAEK_100.shp",
-        #     "left_line_path": left_line_output_file,
-        #     "right_line_path": right_line_output_file,
-        #     "ditch_path": os.path.join("data", "2025/20250106/20250106清沟.shp"),
-        #     "manual_ditch_path": os.path.join("data", "2025/20250106/20250106清沟映射长度.shp"),
-        #     "output_dir": "output",
-        #     "normal_interval": 100,
-        #     "shape_max_length": 500,
-        #     "dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
-        # },
-        # {
-        #     "job_name": "20250115",
-        #     "centerline_path": r"D:\code\polyline\data\arc_smooth\PAEK_100.shp",
-        #     "left_line_path": left_line_output_file,
-        #     "right_line_path": right_line_output_file,
-        #     "ditch_path": os.path.join("data", "2025/20250115/清沟汇总_2024-2025年度20250115.shp"),
-        #     "manual_ditch_path": os.path.join("data", "2025/20250115/c20240115专题监测清沟映射长度_Merge.shp"),
-        #     "output_dir": "output",
-        #     "normal_interval": 100,
-        #     "shape_max_length": 500,
-        #     "dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
-        # },
-        # {
-        #     "job_name": "20250122",
-        #     "centerline_path": r"D:\code\polyline\data\arc_smooth\PAEK_100.shp",
-        #     "left_line_path": left_line_output_file,
-        #     "right_line_path": right_line_output_file,
-        #     "ditch_path": os.path.join("data", "2025/20250122/清沟汇总_2024-2025年度20250122.shp"),
-        #     "manual_ditch_path": os.path.join("data", "2025/20250122/清沟映射汇总_2024-2025年度20250122.shp"),
-        #     "output_dir": "output",
-        #     "normal_interval": 100,
-        #     "shape_max_length": 500,
-        #     "dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
-        # },
-        # {
-        #     "job_name": "20250203",
-        #     "centerline_path": r"D:\code\polyline\data\arc_smooth\PAEK_100.shp",
-        #     "left_line_path": left_line_output_file,
-        #     "right_line_path": right_line_output_file,
-        #     "ditch_path": os.path.join("data", "2025/20250203/清沟汇总_2024-2025年度20250203.shp"),
-        #     "manual_ditch_path": os.path.join("data", "2025/20250203/清沟映射汇总_2024-2025年度20250203.shp"),
-        #     "output_dir": "output",
-        #     "normal_interval": 100,
-        #     "shape_max_length": 500,
-        #     "dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
-        # },
-        # {
-        #     "job_name": "20250210",
-        #     "centerline_path": r"D:\code\polyline\data\arc_smooth\PAEK_100.shp",
-        #     "left_line_path": left_line_output_file,
-        #     "right_line_path": right_line_output_file,
-        #     "ditch_path": os.path.join("data", "2025/20250210/清沟汇总_2024-2025年度20250210.shp"),
-        #     "manual_ditch_path": os.path.join("data", "2025/20250210/清沟映射汇总_2024-2025年度20250210.shp"),
-        #     "output_dir": "output",
-        #     "normal_interval": 100,
-        #     "shape_max_length": 500,
-        #     "dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
-        # },
-        # {
-        #     "job_name": "20250213",
-        #     "centerline_path": r"D:\code\polyline\data\arc_smooth\PAEK_100.shp",
-        #     "left_line_path": left_line_output_file,
-        #     "right_line_path": right_line_output_file,
-        #     "ditch_path": os.path.join("data", "2025/20250213/FL_20250213清沟汇总.shp"),
-        #     "manual_ditch_path": os.path.join("data", "2025/20250213/FL20250213fl清沟映射.shp"),
-        #     "output_dir": "output",
-        #     "normal_interval": 100,
-        #     "shape_max_length": 500,
-        #     "dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
-        # },
-        # {
-        #     "job_name": "20250224",
-        #     "centerline_path": r"D:\code\polyline\data\arc_smooth\PAEK_100.shp",
-        #     "left_line_path": left_line_output_file,
-        #     "right_line_path": right_line_output_file,
-        #     "ditch_path": os.path.join("data", "2025/20250224/20250224_清沟_汇总.shp"),
-        #     "manual_ditch_path": os.path.join("data", "2025/20250224/20250224_清沟映射_汇总.shp"),
-        #     "output_dir": "output",
-        #     "normal_interval": 100,
-        #     "shape_max_length": 500,
-        #     "dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
-        # },
-        # {
-        #     "job_name": "20250302",
-        #     "centerline_path": r"D:\code\polyline\data\arc_smooth\PAEK_100.shp",
-        #     "left_line_path": left_line_output_file,
-        #     "right_line_path": right_line_output_file,
-        #     "ditch_path": os.path.join("data", "2025/20250302/清沟汇总_2024-2025年度20250302.shp"),
-        #     "manual_ditch_path": os.path.join("data", "2025/20250302/清沟映射汇总_2024-2025年度20250302.shp"),
-        #     "output_dir": "output",
-        #     "normal_interval": 100,
-        #     "shape_max_length": 500,
-        #     "dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
-        # },
-        # {
-        #     "job_name": "20250308",
-        #     "centerline_path": r"D:\code\polyline\data\arc_smooth\PAEK_100.shp",
-        #     "left_line_path": left_line_output_file,
-        #     "right_line_path": right_line_output_file,
-        #     "ditch_path": os.path.join("data", "2025/20250308/清沟汇总_2024-2025年度20250308.shp"),
-        #     "manual_ditch_path": os.path.join("data", "2025/20250308/清沟映射汇总_2024-2025年度20250308.shp"),
-        #     "output_dir": "output",
-        #     "normal_interval": 100,
-        #     "shape_max_length": 500,
-        #     "dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
-        # },
-        # {
-        #     "job_name": "20250309",
-        #     "centerline_path": r"D:\code\polyline\data\arc_smooth\PAEK_100.shp",
-        #     "left_line_path": left_line_output_file,
-        #     "right_line_path": right_line_output_file,
-        #     "ditch_path": os.path.join("data", "2025/20250309/清沟汇总_2024-2025年度202503091.shp"),
-        #     "manual_ditch_path": os.path.join("data", "2025/20250309/清沟映射汇总_2024-2025年度202503091.shp"),
-        #     "output_dir": "output",
-        #     "normal_interval": 100,
-        #     "shape_max_length": 500,
-        #     "dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
-        # },
-        # {
-        #     "job_name": "20250312",
-        #     "centerline_path": r"D:\code\polyline\data\arc_smooth\PAEK_100.shp",
-        #     "left_line_path": left_line_output_file,
-        #     "right_line_path": right_line_output_file,
-        #     "ditch_path": os.path.join("data", "2025/20250312/清沟汇总2024-2025_2025031.shp"),
-        #     "manual_ditch_path": os.path.join("data", "2025/20250312/清沟映射汇总2024-2025_2025031.shp"),
-        #     "output_dir": "output",
-        #     "normal_interval": 100,
-        #     "shape_max_length": 500,
-        #     "dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
-        # },
-        # {
-        #     "job_name": "20250315",
-        #     "centerline_path": r"D:\code\polyline\data\arc_smooth\PAEK_100.shp",
-        #     "left_line_path": left_line_output_file,
-        #     "right_line_path": right_line_output_file,
-        #     "ditch_path": os.path.join("data", "2025/20250315/清沟汇总2024-2025_20250315.shp"),
-        #     "manual_ditch_path": os.path.join("data", "2025/20250315/清沟映射汇总2024-2025_20250315.shp"),
-        #     "output_dir": "output",
-        #     "normal_interval": 100,
-        #     "shape_max_length": 500,
-        #     "dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
-        # },
+        {
+            "job_name": "20231226",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2024/20231226清沟_hz.shp"),
+            "manual_ditch_path": os.path.join("data", "2024/20231226清沟映射长度_hz.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20240101",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2024/20240101清沟hz.shp"),
+            "manual_ditch_path": os.path.join("data", "2024/20240101清沟映射长度hz.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20240107",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2024/20240107清沟_hz.shp"),
+            "manual_ditch_path": os.path.join("data", "2024/20240107清沟映射长度_hz.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20240115",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2024/20240115清沟_hz.shp"),
+            "manual_ditch_path": os.path.join("data", "2024/20240115清沟映射长度_hz.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20240123",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2024/20240123清沟_hz.shp"),
+            "manual_ditch_path": os.path.join("data", "2024/20240123清沟映射长度_hz.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20240130",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2024/20240130清沟_hz.shp"),
+            "manual_ditch_path": os.path.join("data", "2024/20240130清沟映射长度_hz.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20240205",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2024/20240205清沟_hz.shp"),
+            "manual_ditch_path": os.path.join("data", "2024/20240205清沟映射长度_hz.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20240217",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2024/20240217清沟_hz.shp"),
+            "manual_ditch_path": os.path.join("data", "2024/20240217清沟映射长度_hz.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20240225",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2024/20240225清沟_hz.shp"),
+            "manual_ditch_path": os.path.join("data", "2024/20240225清沟映射长度_hz.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20240303",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2024/20240303清沟_hz.shp"),
+            "manual_ditch_path": os.path.join("data", "2024/20240303清沟映射长度_hz.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20240307",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2024/20240307清沟_hz.shp"),
+            "manual_ditch_path": os.path.join("data", "2024/20240307清沟映射长度_hz.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20240309",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2024/20240309清沟_hz.shp"),
+            "manual_ditch_path": os.path.join("data", "2024/20240309清沟映射长度_hz.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20240311",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2024/20240311清沟_hz.shp"),
+            "manual_ditch_path": os.path.join("data", "2024/20240311清沟映射长度_hz.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20240313",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2024/20240313清沟_hz.shp"),
+            "manual_ditch_path": os.path.join("data", "2024/20240313清沟映射长度_hz.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20240317",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2024/20240317清沟_hz.shp"),
+            "manual_ditch_path": os.path.join("data", "2024/20240317清沟映射长度_hz.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20250106",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2025/20250106/20250106清沟.shp"),
+            "manual_ditch_path": os.path.join("data", "2025/20250106/20250106清沟映射长度.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20250115",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2025/20250115/清沟汇总_2024-2025年度20250115.shp"),
+            "manual_ditch_path": os.path.join("data", "2025/20250115/c20240115专题监测清沟映射长度_Merge.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20250122",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2025/20250122/清沟汇总_2024-2025年度20250122.shp"),
+            "manual_ditch_path": os.path.join("data", "2025/20250122/清沟映射汇总_2024-2025年度20250122.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+            "plot_config": {
+                "normals": {
+                    "x_min": 300000, "x_max": 320000,
+                    "y_min": 4490000, "y_max": 4510000,
+                    "rtree_mode": "point"   # 可选: "point" 或 "line"
+                },
+                "closed_shapes": {
+                    "x_min": 300000, "x_max": 320000,
+                    "y_min": 4490000, "y_max": 4510000
+                }
+            }
+        },
+        {
+            "job_name": "20250203",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2025/20250203/清沟汇总_2024-2025年度20250203.shp"),
+            "manual_ditch_path": os.path.join("data", "2025/20250203/清沟映射汇总_2024-2025年度20250203.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20250210",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2025/20250210/清沟汇总_2024-2025年度20250210.shp"),
+            "manual_ditch_path": os.path.join("data", "2025/20250210/清沟映射汇总_2024-2025年度20250210.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20250213",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2025/20250213/FL_20250213清沟汇总.shp"),
+            "manual_ditch_path": os.path.join("data", "2025/20250213/FL20250213fl清沟映射.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20250224",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2025/20250224/20250224_清沟_汇总.shp"),
+            "manual_ditch_path": os.path.join("data", "2025/20250224/20250224_清沟映射_汇总.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20250302",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2025/20250302/清沟汇总_2024-2025年度20250302.shp"),
+            "manual_ditch_path": os.path.join("data", "2025/20250302/清沟映射汇总_2024-2025年度20250302.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20250308",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2025/20250308/清沟汇总_2024-2025年度20250308.shp"),
+            "manual_ditch_path": os.path.join("data", "2025/20250308/清沟映射汇总_2024-2025年度20250308.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20250309",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2025/20250309/清沟汇总_2024-2025年度202503091.shp"),
+            "manual_ditch_path": os.path.join("data", "2025/20250309/清沟映射汇总_2024-2025年度202503091.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20250312",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2025/20250312/清沟汇总2024-2025_2025031.shp"),
+            "manual_ditch_path": os.path.join("data", "2025/20250312/清沟映射汇总2024-2025_2025031.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
+        {
+            "job_name": "20250315",
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
+            "ditch_path": os.path.join("data", "2025/20250315/清沟汇总2024-2025_20250315.shp"),
+            "manual_ditch_path": os.path.join("data", "2025/20250315/清沟映射汇总2024-2025_20250315.shp"),
+            "output_dir": "output",
+            "normal_interval": 100,
+            "shape_max_length": 500,
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
+        },
         {
             "job_name": "20250317",
-            "centerline_path": r"D:\code\polyline\data\arc_smooth\PAEK_100.shp",
-            "left_line_path": left_line_output_file,
-            "right_line_path": right_line_output_file,
+            "centerline_path": os.path.join("data","中心线平滑.shp"),
             "ditch_path": os.path.join("data", "2025/20250317/清沟汇总2024-2025_20250317.shp"),
             "manual_ditch_path": os.path.join("data", "2025/20250317/清沟映射汇总2024-2025_20250317.shp"),
             "output_dir": "output",
             "normal_interval": 100,
             "shape_max_length": 500,
-            "dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "north_dam_line": r"D:\code\polyline\data\2021内蒙古河段每日封河长度矢量-修订最新版20220124.shp",
+            "south_dam_line": r"D:\code\polyline\data\2021大堤南岸完善.shp",
         },
     ]
 
