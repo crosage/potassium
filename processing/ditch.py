@@ -2,7 +2,6 @@ import os
 import csv
 import hashlib
 
-from matplotlib.patches import Patch
 from pyproj import Geod, Transformer
 from shapely import LineString, MultiLineString, Point
 from tqdm import tqdm
@@ -67,36 +66,16 @@ def _square_view_bbox_in_degrees(center_geom_src, buffer_m=5000,
     return lon0 - half_deg, lat0 - half_deg, lon0 + half_deg, lat0 + half_deg
 
 
-CLOSED_SHAPE_COLORS = [
-    '#3498DB',  # 蓝色，比浅蓝深一些，容易区分
-    '#27AE60',  # 绿色，饱和度更高，和蓝色差别明显
-    '#F1C40F',  # 黄色，亮而不刺眼
-]
-
-
-
-def process_ditch_endpoints(ditchs, closed_shapes, north_dam_line, south_dam_line, centerline,
+def process_ditch_endpoints(ditchs, closed_shapes, left_line, right_line, dam_line, centerline,
                             save_path=None, log=True, manual_shp_path=None):
     """
-    高效处理清沟：投影到南北大堤线，同时绘制大堤线和中心线作为背景。
-    使用固定颜色显示封闭区域并添加图例。
-
-    参数:
-        ditchs: 清沟列表
-        closed_shapes: 封闭形状列表
-        north_dam_line: 北侧大堤线 (LineString)
-        south_dam_line: 南侧大堤线 (LineString)
-        centerline: 中心线 (LineString)
-        save_path: 保存路径
-        log: 是否记录日志
-        manual_shp_path: 人工投影数据路径
+    高效处理清沟：只投影到堤坝线，同时绘制南北岸线和中心线作为背景。
     """
     all_geometries_for_shp = []
 
     if not save_path:
         log = False
 
-    # 加载人工投影数据
     manual_projections = {}
     if manual_shp_path and os.path.exists(manual_shp_path):
         print(f"--- 正在使用自定义函数加载人工投影数据: {manual_shp_path} ---")
@@ -126,7 +105,6 @@ def process_ditch_endpoints(ditchs, closed_shapes, north_dam_line, south_dam_lin
             else:
                 print(f"✅ 成功加载并处理了 {len(manual_projections)} 条人工投影。")
 
-    # 创建空间索引
     if log:
         print("正在为背景区域创建空间索引...")
         idx_shapes = index.Index()
@@ -134,7 +112,6 @@ def process_ditch_endpoints(ditchs, closed_shapes, north_dam_line, south_dam_lin
             idx_shapes.insert(i, shape.polygon.bounds)
         print("✅ 空间索引创建完成。")
 
-    # 打开CSV文件
     if save_path:
         os.makedirs(save_path, exist_ok=True)
         csv_filename = os.path.join(save_path, "ditch_results.csv")
@@ -143,51 +120,70 @@ def process_ditch_endpoints(ditchs, closed_shapes, north_dam_line, south_dam_lin
 
     with open(csv_filename, 'w', newline='', encoding='utf-8') as csvfile:
         csv_writer = csv.writer(csvfile)
-        # CSV表头（保持不变）
+        # 更新CSV表头，移除中心线投影
         csv_writer.writerow([
             "name", "DATE", "RIVERPART", "CODE",
             "清沟实际长度", "堤坝线投影长度", "人工投影长度"
         ])
         finder = make_shape_finder(closed_shapes)
 
-        # 遍历所有清沟
         for ditch in tqdm(ditchs, desc="处理所有清沟", unit="条"):
             start_point, end_point = ditch.points[0], ditch.points[-1]
             ditch_attributes = ditch.attributes
 
-            # 创建唯一标识符
+            # **MODIFIED: Create a unique, file-safe identifier from CODE and RIVERPART.**
             code = ditch_attributes.get('CODE', 'NO_CODE')
             river_part = ditch_attributes.get('RIVERPART', 'NO_RIVERPART')
             unique_file_identifier = f"R_{code}_C_{river_part}"
             display_title = f"清沟 (CODE: {code}, RIVERPART: {river_part})"
 
-            # --- 起点处理 ---
+            # --- 起点处理 (MODIFIED) ---
             find_result_start = finder(start_point)
             if find_result_start is None:
                 print(f"⚠️ 警告: 未能为清沟 '{display_title}' 的起点找到封闭区域。")
+
+                if log and save_path:
+                    debug_save_path = os.path.join(save_path,
+                                                   f"DEBUG_ditch_{unique_file_identifier}_START_POINT_OUTSIDE.png")
+                    plot_debug_point_outside_shapes(
+                        point_to_check=start_point,
+                        all_closed_shapes=closed_shapes,
+                        ditch_line=ditch.line,
+                        ditch_info=display_title,
+                        point_type="起点",
+                        save_path=debug_save_path
+                    )
                 continue
             start_index, start_shape = find_result_start
-
-            # 投影到北侧大堤线（tangent_line_1）
-            proj_start_north_point = start_shape.tangent_line_1.interpolate(
+            proj_start_dam_point = start_shape.tangent_line_1.interpolate(
                 start_shape.tangent_line_1.project(start_point)
             ) if start_shape and hasattr(start_shape, 'tangent_line_1') else None
 
-            # --- 终点处理 ---
+            # --- 终点处理 (MODIFIED) ---
             find_result_end = finder(end_point)
             if find_result_end is None:
                 print(f"⚠️ 警告: 未能为清沟 '{display_title}' 的终点找到封闭区域。")
+
+                if log and save_path:
+                    debug_save_path = os.path.join(save_path,
+                                                   f"DEBUG_ditch_{unique_file_identifier}_END_POINT_OUTSIDE.png")
+                    plot_debug_point_outside_shapes(
+                        point_to_check=end_point,
+                        all_closed_shapes=closed_shapes,
+                        ditch_line=ditch.line,
+                        ditch_info=display_title,
+                        point_type="终点",
+                        save_path=debug_save_path
+                    )
                 continue
             end_index, end_shape = find_result_end
-
-            # 投影到北侧大堤线
-            proj_end_north_point = end_shape.tangent_line_1.interpolate(
+            proj_end_dam_point = end_shape.tangent_line_1.interpolate(
                 end_shape.tangent_line_1.project(end_point)
             ) if end_shape and hasattr(end_shape, 'tangent_line_1') else None
 
             # --- 计算投影长度 ---
-            if proj_start_north_point and proj_end_north_point:
-                dam_length = extract_subcurve(north_dam_line, proj_start_north_point, proj_end_north_point).length
+            if proj_start_dam_point and proj_end_dam_point:
+                dam_length = extract_subcurve(dam_line, proj_start_dam_point, proj_end_dam_point).length
             else:
                 dam_length = 0
 
@@ -207,7 +203,7 @@ def process_ditch_endpoints(ditchs, closed_shapes, north_dam_line, south_dam_lin
                 f"{ditch_length:.2f}", f"{dam_length:.2f}", f"{manual_length:.2f}"
             ])
 
-            # --- SHP 记录 ---
+            # --- SHP 记录 (更新) ---
             base_record = ditch_attributes.copy()
             base_record.update({
                 'ditch_len': ditch_length,
@@ -217,8 +213,8 @@ def process_ditch_endpoints(ditchs, closed_shapes, north_dam_line, south_dam_lin
 
             geometries_to_save = {
                 'original_ditch': ditch.line,
-                'dam_projection': extract_subcurve(north_dam_line, proj_start_north_point,
-                                                   proj_end_north_point) if dam_length > 0 else None,
+                'dam_projection': extract_subcurve(dam_line, proj_start_dam_point,
+                                                   proj_end_dam_point) if dam_length > 0 else None,
                 'manual_projection': manual_geom
             }
 
@@ -229,7 +225,7 @@ def process_ditch_endpoints(ditchs, closed_shapes, north_dam_line, south_dam_lin
                     record['geometry'] = geom
                     all_geometries_for_shp.append(record)
 
-            # --- 绘图部分（使用固定颜色和图例） ---
+            # --- 绘图 (更新) ---
             if log:
                 x_ditch, y_ditch = ditch.line.xy
                 min_x, max_x = min(x_ditch), max(x_ditch)
@@ -238,18 +234,18 @@ def process_ditch_endpoints(ditchs, closed_shapes, north_dam_line, south_dam_lin
 
                 fig, ax = plt.subplots(figsize=(18, 12))
 
-                # 1. 基础背景线
-                ax.plot(*centerline.xy, color="gray", linewidth=1.5, label="中心线", zorder=3)
-                ax.plot(*south_dam_line.xy, color="#1f77b4", linewidth=2, label="南侧大堤线", zorder=3)
-                ax.plot(*north_dam_line.xy, color="#d62728", linewidth=2, label="北侧大堤线", zorder=3)
+                # 1. 基础背景
+                ax.plot(*centerline.xy, color="gray", linewidth=1.5, label="中心线")
+                ax.plot(*right_line.xy, color="#1f77b4", linewidth=2, label="右岸线")
+                ax.plot(*left_line.xy, color="#d62728", linewidth=2, label="左岸线")
+                ax.plot(*dam_line.xy, color="orange", linewidth=2, label="堤坝线")
                 ax.plot(x_ditch, y_ditch, color="blue", linewidth=2.5, zorder=5, label=f"{display_title}")
 
-                # 绘制堤坝线投影子线段
+                # 绘制子线段高亮 (只绘制堤坝线)
                 if dam_length > 0:
-                    seg = extract_subcurve(north_dam_line, proj_start_north_point, proj_end_north_point)
+                    seg = extract_subcurve(dam_line, proj_start_dam_point, proj_end_dam_point)
                     ax.plot(*seg.xy, color="#994D00", linewidth=2.5, zorder=6, label="堤坝线子线段")
 
-                # 绘制人工投影
                 if manual_geom:
                     if manual_geom.geom_type == 'MultiLineString':
                         for line in manual_geom.geoms:
@@ -258,7 +254,7 @@ def process_ditch_endpoints(ditchs, closed_shapes, north_dam_line, south_dam_lin
                     else:
                         ax.plot(*manual_geom.xy, color="black", linewidth=2.5, zorder=6, label="人工投影")
 
-                # 文本信息
+                # 更新文本内容
                 text_content = (
                     f"长度 (米):\n"
                     f"  - 清沟实际: {ditch_length:.2f}\n"
@@ -275,74 +271,45 @@ def process_ditch_endpoints(ditchs, closed_shapes, north_dam_line, south_dam_lin
                 ax.set_ylim(view_bbox[1], view_bbox[3])
                 ax.set_aspect('equal', adjustable='box')
                 ax.grid(True)
-                ax.legend(loc='lower left', fontsize=10)
+                ax.legend(loc='lower left')
                 ax.set_title(display_title, fontsize=16)
+
+                # **MODIFIED: Saving with the new unique identifier.**
+                # Note: The 'base' image is commented out as it's redundant with the 'proj' image after adding projection lines.
+                # You can uncomment it if you need the image without projection lines.
+                # plt.savefig(os.path.join(save_path, f"ditch__{unique_file_identifier}__base.png"),
+                #             dpi=120, bbox_inches='tight')
 
                 # 2. 投影线版
                 if dam_length > 0:
-                    ax.plot([start_point.x, proj_start_north_point.x],
-                            [start_point.y, proj_start_north_point.y],
-                            '--', color='darkorange', linewidth=1.2, label='投影线')
-                    ax.plot([end_point.x, proj_end_north_point.x],
-                            [end_point.y, proj_end_north_point.y],
+                    ax.plot([start_point.x, proj_start_dam_point.x], [start_point.y, proj_start_dam_point.y],
+                            '--', color='darkorange', linewidth=1.2)
+                    ax.plot([end_point.x, proj_end_dam_point.x], [end_point.y, proj_end_dam_point.y],
                             '--', color='darkorange', linewidth=1.2)
 
                 ax.scatter([start_point.x, end_point.x],
                            [start_point.y, end_point.y],
-                           color='purple', s=50, zorder=7, label='清沟端点')
+                           color='purple', s=50, zorder=6)
 
-                ax.legend(loc='lower left', fontsize=10)
                 ax.set_title(f"投影关系 - {display_title}", fontsize=16)
                 plt.savefig(os.path.join(save_path, f"ditch__{unique_file_identifier}__proj.png"),
                             dpi=120, bbox_inches='tight')
 
-                # 3. 封闭图形版（使用固定颜色和图例）
+                # 3. 封闭图形版
                 visible_shape_indices = list(idx_shapes.intersection(view_bbox))
-                # 收集使用的颜色
-                used_colors = set()
-
                 for j in visible_shape_indices:
                     shape = closed_shapes[j]
                     px, py = shape.polygon.exterior.xy
-
-                    # 使用固定颜色循环
-                    color_index = j % len(CLOSED_SHAPE_COLORS)
-                    color = CLOSED_SHAPE_COLORS[color_index]
-
-                    ax.fill(px, py, color=color, alpha=0.3, zorder=1)
-                    ax.plot(px, py, color="black", linewidth=0.6, alpha=0.5, zorder=2)
-
-                    used_colors.add(color)
-                # ✅ 在同一个图例中实现混合排列（简化版）
-                handles, labels = ax.get_legend_handles_labels()
-
-                if used_colors:
-                    # 创建颜色块
-                    patches = [Patch(facecolor=c, alpha=0.3, edgecolor='black', lw=0.6)
-                               for c in sorted(used_colors)]
-
-                    # 直接追加到现有图例
-                    final_handles = handles + patches
-                    final_labels = labels + ['封闭区域'] * len(patches)   # 只标注一次
-
-                    ax.legend(handles=final_handles,
-                              labels=final_labels,
-                              loc='lower left',
-                              fontsize=10,
-                              framealpha=0.9,
-                              ncol=1)  # 全部竖向排列
-                else:
-                    ax.legend(loc='lower left', fontsize=10)
-
-                ax.set_title(f"封闭区域 - {display_title}", fontsize=16)
-
+                    color = '#' + hashlib.md5(str(j).encode()).hexdigest()[:6]
+                    ax.fill(px, py, color=color, alpha=0.25)
+                    ax.plot(px, py, color="black", linewidth=0.6, alpha=0.5)
                 ax.set_title(f"封闭区域 - {display_title}", fontsize=16)
                 plt.savefig(os.path.join(save_path, f"ditch__{unique_file_identifier}__closed.png"),
                             dpi=120, bbox_inches='tight')
 
                 plt.close(fig)
 
-    # --- 保存 SHP ---
+    # --- 保存 SHP (逻辑不变) ---
     if save_path and all_geometries_for_shp:
         print("\n正在将所有处理结果保存到 SHP 文件...")
         try:
